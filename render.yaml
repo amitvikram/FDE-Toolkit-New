@@ -2,7 +2,7 @@ services:
   - type: web
     name: fde-toolkit
     runtime: docker
-    plan: starter
+    plan: free
     region: ohio
     dockerfilePath: ./dashboard/Dockerfile.website
     dockerContext: .
