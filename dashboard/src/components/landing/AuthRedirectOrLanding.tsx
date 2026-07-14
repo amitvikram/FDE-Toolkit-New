@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useUserOptional } from "@/contexts/UserContext";
 import { LandingPage } from "@/components/landing/LandingPage";
 import { LandingHeader } from "@/components/landing/LandingHeader";
+import { GrowthSections } from "@/components/landing/GrowthSections";
 import { Loader2 } from "lucide-react";
 
 /**
@@ -52,6 +53,7 @@ export function AuthRedirectOrLanding() {
         <LandingHeader />
         <main className="flex-1 min-w-0">
           <LandingPage />
+          <GrowthSections />
         </main>
       </div>
     );
