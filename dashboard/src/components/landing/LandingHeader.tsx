@@ -38,10 +38,11 @@ export function LandingHeader() {
           </div>
         </Link>
 
-        <nav className="hidden items-center gap-7 text-sm text-slate-400 md:flex" aria-label="Primary navigation">
+        <nav className="hidden items-center gap-6 text-sm text-slate-400 lg:flex" aria-label="Primary navigation">
           <a href="#buyers" className="transition hover:text-white">Customers</a>
-          <a href="#outcomes" className="transition hover:text-white">Outcomes</a>
           <a href="#workflow" className="transition hover:text-white">Operating model</a>
+          <a href="#metrics" className="transition hover:text-white">Metrics</a>
+          <Link href="/blog" className="transition hover:text-white">Insights</Link>
           <a href="#security" className="transition hover:text-white">Governance</a>
         </nav>
 
