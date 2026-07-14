@@ -42,7 +42,7 @@ export function LandingHeader() {
           <a href="#buyers" className="transition hover:text-white">Customers</a>
           <a href="#workflow" className="transition hover:text-white">Operating model</a>
           <a href="#metrics" className="transition hover:text-white">Metrics</a>
-          <Link href="/blog" className="transition hover:text-white">Insights</Link>
+          <Link href="/blog" className="transition hover:text-white">Blog</Link>
           <a href="#security" className="transition hover:text-white">Governance</a>
         </nav>
 
@@ -57,11 +57,18 @@ export function LandingHeader() {
               Sign in
             </Button>
           )}
+          <Link
+            href="/blog"
+            className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/30 hover:bg-white/10 sm:text-sm"
+          >
+            Blog
+          </Link>
           <a
             href="mailto:amitvik@gmail.com?subject=FDE-Toolkit%20enterprise%20workflow%20review"
             className="inline-flex items-center gap-2 rounded-lg bg-cyan-300 px-3.5 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 sm:text-sm"
           >
-            Book a workflow review
+            <span className="sm:hidden">Contact</span>
+            <span className="hidden sm:inline">Book a workflow review</span>
             <ArrowRight className="size-3.5" />
           </a>
         </div>
