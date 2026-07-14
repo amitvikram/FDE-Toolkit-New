@@ -1,0 +1,23 @@
+{
+  "name": "fde-toolkit",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "FDE-Toolkit monorepo for governed customer-to-production delivery, isolated sandboxes, and the Next.js dashboard",
+  "scripts": {
+    "dev:worker": "cd worker && npm run dev",
+    "dev:dashboard": "cd dashboard && npm run dev",
+    "dev:convex": "cd dashboard && npm run convex:dev",
+    "dev": "npm run dev:worker",
+    "dev:telemetry": "npm run dev:dashboard",
+    "dev:dashboard-test": "cd dashboard-test && npm run dev"
+  },
+  "author": "Amit Vikram",
+  "license": "MIT",
+  "dependencies": {
+    "supermemory": "^4.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}
