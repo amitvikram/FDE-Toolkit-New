@@ -27,12 +27,12 @@ export function PublicHeader() {
           <Link href="/blog" className="hidden text-sm text-slate-400 hover:text-white sm:inline">
             All insights
           </Link>
-          <a
-            href="mailto:amitvik@gmail.com?subject=FDE-Toolkit%20enterprise%20workflow%20review"
+          <Link
+            href="/#interest"
             className="inline-flex items-center gap-2 rounded-lg bg-cyan-300 px-3.5 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 sm:text-sm"
           >
             Discuss a pilot <ArrowRight className="size-3.5" />
-          </a>
+          </Link>
         </div>
       </div>
     </header>
@@ -50,6 +50,7 @@ export function PublicFooter() {
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-400">
           <Link href="/" className="hover:text-white">Home</Link>
           <Link href="/blog" className="hover:text-white">Insights</Link>
+          <Link href="/#interest" className="hover:text-white">Contact</Link>
           <a
             href="https://github.com/amitvikram/FDE-Toolkit-New"
             target="_blank"
@@ -58,7 +59,6 @@ export function PublicFooter() {
           >
             GitHub
           </a>
-          <a href="mailto:amitvik@gmail.com" className="hover:text-white">Contact</a>
         </div>
       </div>
     </footer>

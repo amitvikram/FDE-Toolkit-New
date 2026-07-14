@@ -10,3 +10,10 @@ services:
     autoDeployTrigger: commit
     domains:
       - fde-toolkit.com
+    envVars:
+      - key: RESEND_API_KEY
+        sync: false
+      - key: INTEREST_NOTIFICATION_EMAIL
+        value: amitvik@gmail.com
+      - key: INTEREST_FROM_EMAIL
+        value: FDE-Toolkit <onboarding@resend.dev>

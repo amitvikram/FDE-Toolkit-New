@@ -7,10 +7,12 @@ import {
   CheckCircle2,
   Clock3,
   Library,
+  Mail,
   TrendingUp,
   Users,
 } from "lucide-react";
 import { insights } from "@/lib/insights";
+import { InterestForm } from "@/components/marketing/InterestForm";
 
 const supportingMetrics = [
   {
@@ -181,6 +183,46 @@ export function GrowthSections() {
         </div>
       </section>
 
+      <section
+        id="interest"
+        className="scroll-mt-24 border-t border-white/10 bg-slate-900/40 px-5 py-24 text-white sm:px-8 lg:px-12 lg:py-32"
+      >
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
+          <div className="lg:sticky lg:top-28">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/5 px-3 py-1 font-mono text-xs uppercase tracking-[0.22em] text-cyan-300">
+              <Mail className="size-3.5" /> Discuss a workflow
+            </div>
+            <h2 className="text-4xl font-semibold tracking-[-0.035em] sm:text-5xl">
+              Bring the client ask that currently takes weeks.
+            </h2>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-400">
+              Share the workflow, account, or delivery problem you are evaluating. The response will focus on whether an isolated co-building and PR-promotion loop fits the situation.
+            </p>
+            <div className="mt-8 space-y-4">
+              {[
+                "Enterprise AI workflow pilots",
+                "SaaS design-partner productization",
+                "Systems-integrator delivery standardization",
+              ].map((item) => (
+                <div key={item} className="flex items-start gap-3 text-sm leading-6 text-slate-300">
+                  <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-300" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-8 text-sm leading-6 text-slate-500">
+              Prefer email? Write directly to{" "}
+              <a href="mailto:amitvik@gmail.com" className="font-semibold text-cyan-300 hover:text-cyan-200">
+                amitvik@gmail.com
+              </a>
+              .
+            </p>
+          </div>
+
+          <InterestForm />
+        </div>
+      </section>
+
       <footer className="border-t border-white/10 bg-slate-950 px-5 py-10 text-white sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-7xl flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -193,6 +235,7 @@ export function GrowthSections() {
             <a href="#buyers" className="hover:text-white">Customers</a>
             <a href="#metrics" className="hover:text-white">Success metrics</a>
             <Link href="/blog" className="hover:text-white">Insights</Link>
+            <a href="#interest" className="hover:text-white">Contact</a>
             <a
               href="https://github.com/amitvikram/FDE-Toolkit-New"
               target="_blank"
@@ -201,7 +244,6 @@ export function GrowthSections() {
             >
               GitHub
             </a>
-            <a href="mailto:amitvik@gmail.com" className="hover:text-white">Contact</a>
           </div>
         </div>
       </footer>

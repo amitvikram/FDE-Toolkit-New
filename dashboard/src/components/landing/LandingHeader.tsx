@@ -64,7 +64,7 @@ export function LandingHeader() {
             Blog
           </Link>
           <a
-            href="mailto:amitvik@gmail.com?subject=FDE-Toolkit%20enterprise%20workflow%20review"
+            href="#interest"
             className="inline-flex items-center gap-2 rounded-lg bg-cyan-300 px-3.5 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 sm:text-sm"
           >
             <span className="sm:hidden">Contact</span>
