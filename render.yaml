@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: fde-toolkit
+    runtime: docker
+    plan: starter
+    region: ohio
+    dockerfilePath: ./dashboard/Dockerfile.website
+    dockerContext: .
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    domains:
+      - fde-toolkit.com
