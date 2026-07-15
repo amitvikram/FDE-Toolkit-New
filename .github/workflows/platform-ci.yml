@@ -58,6 +58,9 @@ jobs:
           docker compose logs
           exit 1
 
+      - name: Smoke test gated product workspace
+        run: node dashboard/scripts/smoke-gated-product.mjs
+
       - name: Smoke test signed orchestration and provenance
         run: |
           curl --fail --silent --show-error \
