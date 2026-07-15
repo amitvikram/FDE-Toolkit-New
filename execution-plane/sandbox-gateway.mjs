@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdir, rm, writeFile, readFile, readdir } from "node:fs/promises";
 import { delimiter, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { safeId, nowIso } from "./platform-runtime.mjs";
@@ -127,6 +127,15 @@ export function createSandboxGateway(options = {}) {
     catch (error) { if (error?.code === "ENOENT") return null; throw error; }
   }
 
+  async function list(filters = {}) {
+    const files = await readdir(metadataRoot).catch(() => []);
+    const sandboxes = await Promise.all(files.filter((file) => file.endsWith(".json")).map(async (file) => JSON.parse(await readFile(join(metadataRoot, file), "utf8"))));
+    return sandboxes
+      .filter((sandbox) => !filters.tenantId || sandbox.tenantId === filters.tenantId)
+      .filter((sandbox) => !filters.workspaceId || sandbox.workspaceId === filters.workspaceId)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  }
+
   async function provision(input = {}) {
     const driverId = safeId(input.driverId || "local-ephemeral", "sandbox driver ID");
     const id = `sbx-${randomUUID().slice(0, 12)}`;
@@ -136,10 +145,14 @@ export function createSandboxGateway(options = {}) {
       id,
       driverId,
       tenantId: safeId(input.tenantId || "public-demo", "tenant ID"),
+      workspaceId: input.workspaceId ? safeId(input.workspaceId, "workspace ID") : null,
       jobId: input.jobId ? safeId(input.jobId, "job ID") : null,
       workspaceMount: workspace,
       image: String(input.image || "node:22-alpine"),
       networkPolicy: input.networkPolicy || "disabled",
+      cpu: number(input.cpu, 1, 0.1, 128),
+      memoryMb: Math.trunc(number(input.memoryMb, 1024, 128, 1_048_576)),
+      workspaceSizeMb: Math.trunc(number(input.workspaceSizeMb, 2048, 64, 1_048_576)),
       status: "provisioning",
       createdAt: nowIso(),
       expiresAt: new Date(Date.now() + number(input.timeoutSeconds, 900, 1, 86_400) * 1000).toISOString(),
@@ -155,8 +168,8 @@ export function createSandboxGateway(options = {}) {
         "--label", `fde.toolkit/sandbox-id=${id}`,
         "--label", `fde.toolkit/tenant-id=${base.tenantId}`,
         "--network", base.networkPolicy === "disabled" ? "none" : "bridge",
-        "--cpus", String(number(input.cpu, 1, 0.1, 128)),
-        "--memory", `${Math.trunc(number(input.memoryMb, 1024, 128, 1_048_576))}m`,
+        "--cpus", String(base.cpu),
+        "--memory", `${base.memoryMb}m`,
         "--pids-limit", String(Math.trunc(number(input.pidsLimit, 256, 16, 32_768))),
         "--security-opt", "no-new-privileges",
         "--mount", `type=bind,src=${workspace},dst=/workspace`,
@@ -194,5 +207,5 @@ export function createSandboxGateway(options = {}) {
     return save({ ...metadata, status: "destroyed", destroyedAt: nowIso() });
   }
 
-  return { init, provision, destroy, get, catalog: sandboxDriverCatalog, workspaceRoot };
+  return { init, provision, destroy, get, list, catalog: sandboxDriverCatalog, workspaceRoot };
 }

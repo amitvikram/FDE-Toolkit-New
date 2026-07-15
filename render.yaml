@@ -18,11 +18,19 @@ services:
       - key: FDE_EXECUTION_PLANE_URL
         value: http://127.0.0.1:8787
       - key: FDE_EXECUTION_SIGNING_SECRET
-        value: render-public-demo-local-secret
+        sync: false
       - key: FDE_PRODUCT_ACCESS_SECRET
         sync: false
       - key: FDE_DEMO_KEEP_WORKSPACES
         value: "false"
+      - key: CODEX_API_KEY
+        sync: false
+      - key: GITHUB_APP_SLUG
+        sync: false
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_APP_PRIVATE_KEY
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: INTEREST_NOTIFICATION_EMAIL

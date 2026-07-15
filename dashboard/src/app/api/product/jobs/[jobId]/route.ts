@@ -4,6 +4,7 @@ import {
   verifyProductAccessToken,
 } from "@/lib/product-access";
 import { getProductJob } from "@/lib/orchestration/platform-client";
+import { publicProductJob } from "@/lib/public-product-job";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +33,8 @@ export async function GET(
   }
 
   try {
-    return NextResponse.json(await getProductJob(access.leadId, jobId));
+    const result = await getProductJob(access.leadId, jobId);
+    return NextResponse.json({ job: publicProductJob(result.job) });
   } catch (error) {
     return NextResponse.json(
       {

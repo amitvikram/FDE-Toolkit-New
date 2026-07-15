@@ -1,4 +1,6 @@
 import { createSign } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
 
 function base64Url(value) {
   return Buffer.from(value)
@@ -20,17 +22,17 @@ function appJwt(appId, privateKey) {
   return `${unsigned}.${signature}`;
 }
 
-function parseRepository(value) {
+export function parseGitHubRepository(value) {
   const text = String(value || "").trim().replace(/\.git$/, "");
   if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(text)) {
     const [owner, repo] = text.split("/");
-    return { owner, repo };
+    return { owner, repo, fullName: `${owner}/${repo}` };
   }
   const url = new URL(text);
-  if (url.hostname !== "github.com") throw new Error("GitHub promotion currently supports github.com repositories.");
+  if (url.hostname !== "github.com") throw new Error("GitHub integration currently supports github.com repositories.");
   const [owner, repo] = url.pathname.replace(/^\//, "").split("/");
   if (!owner || !repo) throw new Error("A valid GitHub repository is required.");
-  return { owner, repo };
+  return { owner, repo, fullName: `${owner}/${repo}` };
 }
 
 async function githubRequest(path, token, options = {}) {
@@ -57,16 +59,41 @@ async function githubRequest(path, token, options = {}) {
   return payload;
 }
 
-async function installationToken({ appId, privateKey, installationId, repo }) {
-  const jwt = appJwt(appId, privateKey);
+function credentials(input = {}) {
+  const appId = input.appId || process.env.GITHUB_APP_ID;
+  const privateKey = String(input.privateKey || process.env.GITHUB_APP_PRIVATE_KEY || "").replaceAll("\\n", "\n");
+  if (!appId || !privateKey) throw new Error("GitHub App ID and private key are not configured.");
+  return { appId, privateKey };
+}
+
+export async function createInstallationToken({ installationId, repository, permissions, appId, privateKey }) {
+  const configured = credentials({ appId, privateKey });
+  const { repo } = parseGitHubRepository(repository);
+  const jwt = appJwt(configured.appId, configured.privateKey);
   const payload = await githubRequest(`/app/installations/${installationId}/access_tokens`, jwt, {
     method: "POST",
     body: JSON.stringify({
       repositories: [repo],
-      permissions: { contents: "write", pull_requests: "write" },
+      permissions: permissions || { contents: "write", pull_requests: "write" },
     }),
   });
-  return payload.token;
+  return { token: payload.token, expiresAt: payload.expires_at, repositories: payload.repositories || [] };
+}
+
+export async function getGitHubInstallation(installationId, input = {}) {
+  const configured = credentials(input);
+  return githubRequest(`/app/installations/${installationId}`, appJwt(configured.appId, configured.privateKey));
+}
+
+export async function listInstallationRepositories(installationId, input = {}) {
+  const configured = credentials(input);
+  const jwt = appJwt(configured.appId, configured.privateKey);
+  const access = await githubRequest(`/app/installations/${installationId}/access_tokens`, jwt, {
+    method: "POST",
+    body: JSON.stringify({ permissions: { contents: "read", metadata: "read" } }),
+  });
+  const result = await githubRequest("/installation/repositories?per_page=100", access.token);
+  return result.repositories || [];
 }
 
 function sanitizeBranch(value, jobId) {
@@ -78,8 +105,73 @@ function sanitizeBranch(value, jobId) {
   return branch || `fde/${jobId}`;
 }
 
+function safeWorkspaceFile(workspace, relativePath) {
+  const root = resolve(process.env.FDE_WORKSPACE_ROOT || "/workspaces");
+  const mountPath = resolve(workspace?.mountPath || "");
+  if (!mountPath || (mountPath !== root && !mountPath.startsWith(`${root}${sep}`))) {
+    throw new Error("Promotion workspace is outside FDE_WORKSPACE_ROOT.");
+  }
+  const file = resolve(mountPath, String(relativePath || ""));
+  if (file !== mountPath && !file.startsWith(`${mountPath}${sep}`)) throw new Error("Unsafe promotion file path.");
+  return file;
+}
+
+function repositoryPath(job, relativePath) {
+  const projectPath = String(job.request.workspace?.projectPath || "").replace(/^\/+|\/+$/g, "");
+  const clean = String(relativePath || "").replace(/^\/+/, "");
+  return [projectPath, clean].filter(Boolean).join("/");
+}
+
 export function githubAppConfigured() {
-  return Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_PRIVATE_KEY && process.env.GITHUB_APP_INSTALLATION_ID);
+  return Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_PRIVATE_KEY);
+}
+
+async function existingFile(owner, repo, path, ref, token) {
+  try {
+    return await githubRequest(`/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`, token);
+  } catch (error) {
+    if (error.status === 404) return null;
+    throw error;
+  }
+}
+
+async function promoteWorkspaceFiles(job, owner, repo, branch, baseBranch, token) {
+  const workspace = job.request.workspace;
+  if (!workspace?.mountPath) return [];
+  const changes = (job.result?.observedDiff || job.result?.provenance?.filesystemDiff || []).slice(0, 60);
+  const commits = [];
+
+  for (const change of changes) {
+    const path = repositoryPath(job, change.path);
+    if (!path || path.startsWith(".git/")) continue;
+    const remote = await existingFile(owner, repo, path, branch, token) || await existingFile(owner, repo, path, baseBranch, token);
+    if (change.operation === "deleted") {
+      if (!remote?.sha) continue;
+      const deleted = await githubRequest(`/repos/${owner}/${repo}/contents/${path}`, token, {
+        method: "DELETE",
+        body: JSON.stringify({ message: `feat(fde): delete ${path}`, sha: remote.sha, branch }),
+      });
+      commits.push({ path, operation: "deleted", commitSha: deleted.commit.sha });
+      continue;
+    }
+
+    const filePath = safeWorkspaceFile(workspace, change.path);
+    const info = await stat(filePath);
+    if (!info.isFile()) continue;
+    if (info.size > 2 * 1024 * 1024) throw new Error(`Promotion file ${path} exceeds the 2 MB MVP limit.`);
+    const content = await readFile(filePath);
+    const written = await githubRequest(`/repos/${owner}/${repo}/contents/${path}`, token, {
+      method: "PUT",
+      body: JSON.stringify({
+        message: `feat(fde): ${change.operation || "update"} ${path}`,
+        content: content.toString("base64"),
+        branch,
+        ...(remote?.sha ? { sha: remote.sha } : {}),
+      }),
+    });
+    commits.push({ path, operation: change.operation || (remote ? "modified" : "added"), commitSha: written.commit.sha });
+  }
+  return commits;
 }
 
 export async function createGitHubPromotion(job, input = {}) {
@@ -88,14 +180,20 @@ export async function createGitHubPromotion(job, input = {}) {
     throw new Error("All required human approvals must be recorded before promotion.");
   }
 
-  const appId = input.appId || process.env.GITHUB_APP_ID;
-  const privateKey = String(input.privateKey || process.env.GITHUB_APP_PRIVATE_KEY || "").replaceAll("\\n", "\n");
   const installationId = input.installationId || job.request.metadata?.githubInstallationId || process.env.GITHUB_APP_INSTALLATION_ID;
-  if (!appId || !privateKey || !installationId) throw new Error("GitHub App credentials are not configured.");
+  if (!installationId) throw new Error("A GitHub App installation is not connected to this workspace.");
 
-  const { owner, repo } = parseRepository(input.repository || job.request.repository);
+  const repository = input.repository || job.request.repository;
+  const { owner, repo } = parseGitHubRepository(repository);
   const baseBranch = input.baseBranch || job.request.baseBranch || "main";
-  const token = await installationToken({ appId, privateKey, installationId, repo });
+  const access = await createInstallationToken({
+    installationId,
+    repository,
+    permissions: { contents: "write", pull_requests: "write" },
+    appId: input.appId,
+    privateKey: input.privateKey,
+  });
+  const token = access.token;
   const baseRef = await githubRequest(`/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(baseBranch)}`, token);
   let branch = sanitizeBranch(input.branch || job.result?.promotionPackage?.branchName, job.id);
 
@@ -113,6 +211,7 @@ export async function createGitHubPromotion(job, input = {}) {
     });
   }
 
+  const codeCommits = await promoteWorkspaceFiles(job, owner, repo, branch, baseBranch, token);
   const evidencePackage = {
     contractVersion: "1.0",
     generatedBy: "FDE-Toolkit",
@@ -126,6 +225,7 @@ export async function createGitHubPromotion(job, input = {}) {
     evidence: job.evidence,
     auditHeadHash: job.auditHeadHash || null,
     usage: job.usage,
+    promotedFiles: codeCommits,
     executionResult: job.result,
     timestamps: {
       acceptedAt: job.acceptedAt,
@@ -135,12 +235,14 @@ export async function createGitHubPromotion(job, input = {}) {
     },
   };
   const evidencePath = `.fde/runs/${job.id}.json`;
+  const priorEvidence = await existingFile(owner, repo, evidencePath, branch, token);
   const file = await githubRequest(`/repos/${owner}/${repo}/contents/${evidencePath}`, token, {
     method: "PUT",
     body: JSON.stringify({
       message: `chore(fde): attach governed evidence for ${job.id}`,
       content: Buffer.from(`${JSON.stringify(evidencePackage, null, 2)}\n`, "utf8").toString("base64"),
       branch,
+      ...(priorEvidence?.sha ? { sha: priorEvidence.sha } : {}),
     }),
   });
 
@@ -150,6 +252,7 @@ export async function createGitHubPromotion(job, input = {}) {
     `- Job: \`${job.id}\``,
     `- Tenant: \`${job.tenantId}\``,
     `- Approval status: **${job.approvalStatus}**`,
+    `- Promoted files: **${codeCommits.length}**`,
     `- Evidence package: \`${evidencePath}\``,
     `- Audit head: \`${job.auditHeadHash || "not-recorded"}\``,
     "",
@@ -169,6 +272,7 @@ export async function createGitHubPromotion(job, input = {}) {
     baseBranch,
     evidencePath,
     auditHeadHash: job.auditHeadHash || null,
+    promotedFiles: codeCommits,
     commitSha: file.commit.sha,
     pullRequestNumber: pullRequest.number,
     pullRequestUrl: pullRequest.html_url,

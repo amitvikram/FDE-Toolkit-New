@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { runDemoExecution } from "./demo-runner.mjs";
+import { runWorkspaceDemoExecution } from "./workspace-demo-runner.mjs";
 import { FilePlatformStore } from "./persistence.mjs";
 import {
   CONTRACT_VERSION,
@@ -206,12 +207,15 @@ export function createPlatformCore(options = {}) {
     try {
       let result;
       if (job.request.driverId === "fde-demo-agent") {
-        result = await runDemoExecution({
+        const runner = job.request.workspace?.mountPath ? runWorkspaceDemoExecution : runDemoExecution;
+        result = await runner({
           ...job.request,
           scenario: job.request.scenario || "enterprise-ai",
+          intent: job.request.intent,
           clientAsk: job.request.intent,
           codingAgentId: "fde-demo-agent",
           approvalMode: "human-required",
+          requiredApprovals: job.request.requiredApprovals,
         });
         for (const file of result.provenance?.filesystemDiff || []) await emitObservedEvent(job, { type: "file_diff", payload: file, source: "fde-execution-plane" });
         for (const command of result.provenance?.commands || []) await emitObservedEvent(job, { type: "command_run", payload: command, source: "fde-execution-plane" });

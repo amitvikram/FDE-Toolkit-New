@@ -3,9 +3,17 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { runDemoExecution } from "./demo-runner.mjs";
 import { createPlatformCore } from "./platform-core.mjs";
 import { CONTRACT_VERSION, PLATFORM_VERSION } from "./platform-runtime.mjs";
-import { createGitHubPromotion, githubAppConfigured } from "./github-app.mjs";
+import {
+  createGitHubPromotion,
+  getGitHubInstallation,
+  githubAppConfigured,
+  listInstallationRepositories,
+  parseGitHubRepository,
+} from "./github-app.mjs";
 import { createSandboxGateway } from "./sandbox-gateway.mjs";
 import { createCredentialBroker } from "./credential-broker.mjs";
+import { createWorkspaceRegistry } from "./workspace-registry.mjs";
+import { createWorkspacePreparer } from "./workspace-preparer.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const signingSecret = process.env.FDE_EXECUTION_SIGNING_SECRET || "local-demo-signing-secret";
@@ -14,7 +22,9 @@ const maxBodyBytes = 1024 * 1024;
 const credentialBroker = createCredentialBroker();
 const core = createPlatformCore({ credentialBroker });
 const sandboxes = createSandboxGateway({ metadataRoot: `${core.dataDir}/sandboxes` });
-await Promise.all([core.init(), sandboxes.init()]);
+const workspaces = createWorkspaceRegistry({ root: `${core.dataDir}/workspaces` });
+const workspacePreparer = createWorkspacePreparer();
+await Promise.all([core.init(), sandboxes.init(), workspaces.init()]);
 
 function sendJson(response, status, payload) {
   const body = JSON.stringify(payload);
@@ -77,6 +87,12 @@ function matchJobPath(pathname, suffix = "") {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function matchWorkspacePath(pathname, suffix = "") {
+  const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = pathname.match(new RegExp(`^/v1/workspaces/([^/]+)${escaped}$`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 async function requireSignedJson(request, response) {
   const rawBody = await readBody(request);
   const verificationError = verifyRequest(request, rawBody);
@@ -109,6 +125,7 @@ const server = createServer(async (request, response) => {
         githubAppConfigured: githubAppConfigured(),
         sandboxDrivers: sandboxes.catalog(),
         secretProviders: credentialBroker.catalog(),
+        workspaceRegistry: { type: "file", root: workspaces.root },
       });
     }
 
@@ -122,6 +139,24 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/v1/secrets/providers") {
       return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, providers: credentialBroker.catalog() });
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/workspaces") {
+      const tenantId = tenantFrom(url);
+      return sendJson(response, 200, { tenantId, workspaces: await workspaces.list(tenantId) });
+    }
+
+    const workspaceMatch = url.pathname.match(/^\/v1\/workspaces\/([^/]+)$/);
+    if (request.method === "GET" && workspaceMatch) {
+      const tenantId = tenantFrom(url);
+      const workspace = await workspaces.get(tenantId, decodeURIComponent(workspaceMatch[1]));
+      return workspace ? sendJson(response, 200, { workspace }) : sendJson(response, 404, { error: "Workspace not found." });
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/sandboxes") {
+      const tenantId = tenantFrom(url);
+      const workspaceId = url.searchParams.get("workspaceId") || null;
+      return sendJson(response, 200, { tenantId, workspaceId, sandboxes: await sandboxes.list({ tenantId, workspaceId }) });
     }
 
     const sandboxMatch = url.pathname.match(/^\/v1\/sandboxes\/([^/]+)$/);
@@ -171,6 +206,94 @@ const server = createServer(async (request, response) => {
       return sendJson(response, 202, { contractVersion: CONTRACT_VERSION, job });
     }
 
+    if (url.pathname === "/v1/workspaces") {
+      core.authorize(actor, "job:create");
+      const workspace = await workspaces.save({ ...payload, actor });
+      return sendJson(response, 201, { contractVersion: CONTRACT_VERSION, workspace });
+    }
+
+    const updateWorkspaceId = matchWorkspacePath(url.pathname);
+    if (updateWorkspaceId) {
+      core.authorize(actor, "job:create");
+      const tenantId = tenantFrom(url, payload);
+      const workspace = await workspaces.save({ ...payload, id: updateWorkspaceId, tenantId });
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, workspace });
+    }
+
+    const githubWorkspaceId = matchWorkspacePath(url.pathname, "/github");
+    if (githubWorkspaceId) {
+      core.authorize(actor, "job:create");
+      if (!githubAppConfigured()) throw new Error("GitHub App credentials are not configured in the execution plane.");
+      const tenantId = tenantFrom(url, payload);
+      const installationId = String(payload.installationId || "").trim();
+      if (!installationId) throw new Error("installationId is required.");
+      const installation = await getGitHubInstallation(installationId);
+      const repositories = await listInstallationRepositories(installationId);
+      const repositoryNames = repositories.map((repository) => repository.full_name).filter(Boolean);
+      let workspace = await workspaces.connectGitHub(tenantId, githubWorkspaceId, {
+        installationId,
+        accountLogin: installation.account?.login || null,
+        repositories: repositoryNames,
+      });
+      const requestedRepository = payload.repository || workspace.repository.fullName;
+      if (requestedRepository) {
+        const parsed = parseGitHubRepository(requestedRepository);
+        if (!repositoryNames.includes(parsed.fullName)) throw new Error("The selected repository is not available to this GitHub App installation.");
+        workspace = await workspaces.save({
+          ...workspace,
+          tenantId,
+          id: githubWorkspaceId,
+          repository: {
+            ...workspace.repository,
+            fullName: parsed.fullName,
+            url: `https://github.com/${parsed.fullName}`,
+            baseBranch: payload.baseBranch || workspace.repository.baseBranch,
+            projectPath: payload.projectPath ?? workspace.repository.projectPath,
+            connected: true,
+          },
+        });
+      }
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, workspace, repositories: repositoryNames });
+    }
+
+    const workspaceSandboxId = matchWorkspacePath(url.pathname, "/sandboxes");
+    if (workspaceSandboxId) {
+      core.authorize(actor, "job:create");
+      const tenantId = tenantFrom(url, payload);
+      const workspace = await workspaces.get(tenantId, workspaceSandboxId);
+      if (!workspace) throw new Error("Workspace not found.");
+      const sandbox = await sandboxes.provision({
+        tenantId,
+        workspaceId: workspace.id,
+        driverId: payload.driverId || workspace.sandbox.driverId,
+        image: payload.image || workspace.sandbox.image,
+        cpu: payload.cpu ?? workspace.sandbox.cpu,
+        memoryMb: payload.memoryMb ?? workspace.sandbox.memoryMb,
+        workspaceSizeMb: payload.workspaceSizeMb ?? workspace.sandbox.workspaceSizeMb,
+        timeoutSeconds: payload.timeoutSeconds ?? workspace.sandbox.timeoutSeconds,
+        networkPolicy: payload.networkPolicy || workspace.sandbox.networkPolicy,
+        namespace: payload.namespace || workspace.sandbox.namespace,
+        apply: payload.apply === true,
+      });
+      const updatedWorkspace = await workspaces.attachSandbox(tenantId, workspace.id, sandbox.id);
+      return sendJson(response, 201, { contractVersion: CONTRACT_VERSION, workspace: updatedWorkspace, sandbox });
+    }
+
+    const prepareWorkspaceId = matchWorkspacePath(url.pathname, "/prepare");
+    if (prepareWorkspaceId) {
+      core.authorize(actor, "job:create");
+      const tenantId = tenantFrom(url, payload);
+      const workspace = await workspaces.get(tenantId, prepareWorkspaceId);
+      if (!workspace) throw new Error("Workspace not found.");
+      const sandboxId = payload.sandboxId || workspace.sandbox.activeSandboxId;
+      if (!sandboxId) throw new Error("Provision a sandbox before preparing the repository.");
+      const sandbox = await sandboxes.get(sandboxId);
+      if (!sandbox || sandbox.tenantId !== tenantId || sandbox.workspaceId !== workspace.id) throw new Error("Workspace sandbox not found.");
+      const prepared = await workspacePreparer.prepare({ workspace, sandbox });
+      const updatedWorkspace = await workspaces.markPrepared(tenantId, workspace.id, prepared);
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, workspace: updatedWorkspace, sandbox, prepared });
+    }
+
     if (url.pathname === "/v1/customer-agents/events") {
       const job = await core.ingestCustomerEvent(payload);
       return sendJson(response, 202, { contractVersion: CONTRACT_VERSION, job });
@@ -190,8 +313,13 @@ const server = createServer(async (request, response) => {
     const destroySandbox = url.pathname.match(/^\/v1\/sandboxes\/([^/]+)\/destroy$/);
     if (destroySandbox) {
       core.authorize(actor, "job:cancel");
-      const sandbox = await sandboxes.destroy(decodeURIComponent(destroySandbox[1]));
-      return sendJson(response, 200, { sandbox });
+      const sandboxId = decodeURIComponent(destroySandbox[1]);
+      const sandbox = await sandboxes.destroy(sandboxId);
+      let workspace = null;
+      if (sandbox.workspaceId) {
+        workspace = await workspaces.attachSandbox(sandbox.tenantId, sandbox.workspaceId, null).catch(() => null);
+      }
+      return sendJson(response, 200, { sandbox, workspace });
     }
 
     const cancelId = matchJobPath(url.pathname, "/cancel");
@@ -240,7 +368,7 @@ const server = createServer(async (request, response) => {
   } catch (error) {
     console.error("Execution plane request failed:", error);
     const message = error instanceof Error ? error.message : "Execution plane request failed.";
-    const status = /not found/i.test(message) ? 404 : /cannot perform|approval|signature|policy/i.test(message) ? 403 : 400;
+    const status = /not found/i.test(message) ? 404 : /cannot perform|approval|signature|policy|installation/i.test(message) ? 403 : 400;
     return sendJson(response, status, { error: message });
   }
 });
