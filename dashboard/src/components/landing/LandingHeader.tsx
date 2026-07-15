@@ -41,12 +41,12 @@ export function LandingHeader() {
         <nav className="hidden items-center gap-6 text-sm text-slate-400 lg:flex" aria-label="Primary navigation">
           <a href="#buyers" className="transition hover:text-white">Customers</a>
           <a href="#workflow" className="transition hover:text-white">Operating model</a>
+          <Link href="/platform" className="transition hover:text-white">Platform demo</Link>
           <a href="#metrics" className="transition hover:text-white">Metrics</a>
           <Link href="/blog" className="transition hover:text-white">Blog</Link>
-          <a href="#security" className="transition hover:text-white">Governance</a>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {!siteOnly && (
             <Button
               variant="ghost"
@@ -58,18 +58,24 @@ export function LandingHeader() {
             </Button>
           )}
           <Link
+            href="/platform"
+            className="inline-flex items-center rounded-lg border border-cyan-300/25 bg-cyan-300/5 px-2.5 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-300/10 sm:px-3 sm:text-sm"
+          >
+            Demo
+          </Link>
+          <Link
             href="/blog"
-            className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/30 hover:bg-white/10 sm:text-sm"
+            className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-2.5 py-2 text-xs font-semibold text-white transition hover:border-white/30 hover:bg-white/10 sm:px-3 sm:text-sm"
           >
             Blog
           </Link>
           <a
             href="#interest"
-            className="inline-flex items-center gap-2 rounded-lg bg-cyan-300 px-3.5 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 sm:text-sm"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-300 px-2.5 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 sm:px-3.5 sm:text-sm"
           >
             <span className="sm:hidden">Contact</span>
             <span className="hidden sm:inline">Book a workflow review</span>
-            <ArrowRight className="size-3.5" />
+            <ArrowRight className="hidden size-3.5 sm:block" />
           </a>
         </div>
       </div>
