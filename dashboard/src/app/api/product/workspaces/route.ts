@@ -56,6 +56,8 @@ const workspaceSchema = z.object({
   }).optional(),
 });
 
+type WorkspaceCreateInput = Parameters<typeof saveProductWorkspace>[1];
+
 function access(request: NextRequest) {
   return verifyProductAccessToken(request.cookies.get(PRODUCT_ACCESS_COOKIE)?.value);
 }
@@ -80,7 +82,10 @@ export async function POST(request: NextRequest) {
   const parsed = workspaceSchema.safeParse(payload);
   if (!parsed.success) return NextResponse.json({ error: "Workspace settings are invalid.", details: parsed.error.flatten() }, { status: 400 });
   try {
-    const result = await saveProductWorkspace(session.leadId, parsed.data);
+    const result = await saveProductWorkspace(
+      session.leadId,
+      parsed.data as unknown as WorkspaceCreateInput,
+    );
     return NextResponse.json({ workspace: publicProductWorkspace(result.workspace) }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Workspace could not be created." }, { status: 502 });
