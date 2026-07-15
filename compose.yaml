@@ -8,7 +8,16 @@ services:
       PORT: "8787"
       FDE_EXECUTION_BOUNDARY: separate-container
       FDE_EXECUTION_SIGNING_SECRET: local-demo-signing-secret
+      FDE_CALLBACK_SIGNING_SECRET: local-demo-callback-secret
       FDE_DEMO_KEEP_WORKSPACES: "false"
+      FDE_DATA_DIR: /var/lib/fde
+      FDE_WORKSPACE_ROOT: /workspaces
+      FDE_MAX_CONCURRENT_JOBS: "2"
+      FDE_MAX_CONCURRENT_JOBS_PER_TENANT: "1"
+      FDE_MAX_QUEUED_JOBS: "100"
+    volumes:
+      - fde_execution_data:/var/lib/fde
+      - fde_workspaces:/workspaces
     expose:
       - "8787"
     healthcheck:
@@ -39,3 +48,7 @@ services:
       FDE_EXECUTION_PLANE_URL: http://execution-plane:8787
       FDE_EXECUTION_SIGNING_SECRET: local-demo-signing-secret
     restart: unless-stopped
+
+volumes:
+  fde_execution_data:
+  fde_workspaces:
