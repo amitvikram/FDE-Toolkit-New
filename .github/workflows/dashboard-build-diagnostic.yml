@@ -17,6 +17,7 @@ jobs:
           show-progress: false
 
       - name: Build dashboard with focused failure output
+        id: dashboard_build
         shell: bash
         run: |
           cd dashboard
@@ -31,3 +32,12 @@ jobs:
             exit "$status"
           fi
           tail -n 20 /tmp/dashboard-build.log
+
+      - name: Upload dashboard build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-build-log
+          path: /tmp/dashboard-build.log
+          if-no-files-found: error
+          retention-days: 1
