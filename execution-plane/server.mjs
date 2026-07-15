@@ -4,13 +4,15 @@ import { runDemoExecution } from "./demo-runner.mjs";
 import { createPlatformCore } from "./platform-core.mjs";
 import { CONTRACT_VERSION, PLATFORM_VERSION } from "./platform-runtime.mjs";
 import { createGitHubPromotion, githubAppConfigured } from "./github-app.mjs";
+import { createSandboxGateway } from "./sandbox-gateway.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const signingSecret = process.env.FDE_EXECUTION_SIGNING_SECRET || "local-demo-signing-secret";
 const maxClockSkewMs = 5 * 60 * 1000;
 const maxBodyBytes = 1024 * 1024;
 const core = createPlatformCore();
-await core.init();
+const sandboxes = createSandboxGateway({ metadataRoot: `${core.dataDir}/sandboxes` });
+await Promise.all([core.init(), sandboxes.init()]);
 
 function sendJson(response, status, payload) {
   const body = JSON.stringify(payload);
@@ -103,11 +105,22 @@ const server = createServer(async (request, response) => {
         storage: { type: "file", dataDir: core.dataDir, durableVolumeRecommended: true },
         queue: core.queueStats(),
         githubAppConfigured: githubAppConfigured(),
+        sandboxDrivers: sandboxes.catalog(),
       });
     }
 
     if (request.method === "GET" && url.pathname === "/v1/drivers") {
       return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, drivers: core.getDriverCatalog() });
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/sandboxes/drivers") {
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, drivers: sandboxes.catalog() });
+    }
+
+    const sandboxMatch = url.pathname.match(/^\/v1\/sandboxes\/([^/]+)$/);
+    if (request.method === "GET" && sandboxMatch) {
+      const sandbox = await sandboxes.get(decodeURIComponent(sandboxMatch[1]));
+      return sandbox ? sendJson(response, 200, { sandbox }) : sendJson(response, 404, { error: "Sandbox not found." });
     }
 
     if (request.method === "GET" && url.pathname === "/v1/artifacts") {
@@ -159,6 +172,19 @@ const server = createServer(async (request, response) => {
     if (url.pathname === "/v1/artifacts") {
       const artifact = await core.createArtifact(payload, actor);
       return sendJson(response, 201, { contractVersion: CONTRACT_VERSION, artifact });
+    }
+
+    if (url.pathname === "/v1/sandboxes") {
+      core.authorize(actor, "job:create");
+      const sandbox = await sandboxes.provision(payload);
+      return sendJson(response, 201, { contractVersion: CONTRACT_VERSION, sandbox });
+    }
+
+    const destroySandbox = url.pathname.match(/^\/v1\/sandboxes\/([^/]+)\/destroy$/);
+    if (destroySandbox) {
+      core.authorize(actor, "job:cancel");
+      const sandbox = await sandboxes.destroy(decodeURIComponent(destroySandbox[1]));
+      return sendJson(response, 200, { sandbox });
     }
 
     const cancelId = matchJobPath(url.pathname, "/cancel");
