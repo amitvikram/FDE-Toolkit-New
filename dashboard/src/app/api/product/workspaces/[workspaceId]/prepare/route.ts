@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { PRODUCT_ACCESS_COOKIE, verifyProductAccessToken } from "@/lib/product-access";
 import { prepareProductWorkspace, publicProductWorkspace } from "@/lib/orchestration/platform-client";
+import { publicProductSandbox } from "@/lib/public-product-sandbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
   try {
     const result = await prepareProductWorkspace(access.leadId, workspaceId, parsed.data.sandboxId);
     const workspace = publicProductWorkspace(result.workspace);
-    return NextResponse.json({ workspace, sandbox: result.sandbox, prepared: workspace.prepared });
+    return NextResponse.json({ workspace, sandbox: publicProductSandbox(result.sandbox), prepared: workspace.prepared });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Repository could not be prepared." }, { status: 502 });
   }
