@@ -31,13 +31,13 @@ export const providerCatalog: ProviderCatalog = {
         "Credentials and repository access remain inside the customer-approved execution boundary.",
     },
     {
-      id: "anthropic-claude-code",
+      id: "anthropic-claude-agent",
       kind: "coding-agent",
-      name: "Claude Code",
+      name: "Claude Agent",
       vendor: "Anthropic",
       status: "adapter-ready",
       description:
-        "Connect Claude Code through a controlled CLI runner or customer-hosted agent gateway.",
+        "Connect an Anthropic-powered coding agent through the Claude Agent SDK and a controlled customer-hosted runner.",
       deploymentModes: ["Customer VPC", "Developer workstation", "Managed runner"],
       capabilities: ["Repository analysis", "Code editing", "Test execution"],
       requirements: ["Customer-approved authentication", "Allowlisted tool policy"],
