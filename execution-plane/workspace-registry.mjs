@@ -95,10 +95,11 @@ function normalizeWorkspace(input = {}, existing = null) {
       namespace: string(sandbox.namespace, current.sandbox?.namespace || "fde-execution", 120),
       activeSandboxId: sandbox.activeSandboxId ?? current.sandbox?.activeSandboxId ?? null,
     },
+    prepared: input.prepared ?? current.prepared ?? null,
     preview: {
       buildCommand: string(preview.buildCommand, current.preview?.buildCommand || "", 500),
       startCommand: string(preview.startCommand, current.preview?.startCommand || "", 500),
-      outputPath: string(preview.outputPath, current.preview?.outputPath || "src/index.html", 300),
+      outputPath: string(preview.outputPath, current.preview?.outputPath || "index.html", 300),
       port: Math.trunc(number(preview.port, current.preview?.port || 3000, 1, 65535)),
       healthPath: string(preview.healthPath, current.preview?.healthPath || "/", 200),
     },
@@ -135,9 +136,10 @@ export function createWorkspaceRegistry(options = {}) {
   async function withLock(key, operation) {
     const previous = locks.get(key) || Promise.resolve();
     const next = previous.then(operation, operation);
-    locks.set(key, next.catch(() => {}));
+    const guarded = next.catch(() => {});
+    locks.set(key, guarded);
     try { return await next; }
-    finally { if (locks.get(key) === next) locks.delete(key); }
+    finally { if (locks.get(key) === guarded) locks.delete(key); }
   }
 
   async function get(tenantId, workspaceId) {
@@ -168,7 +170,13 @@ export function createWorkspaceRegistry(options = {}) {
   async function attachSandbox(tenantId, workspaceId, sandboxId) {
     const current = await get(tenantId, workspaceId);
     if (!current) throw new Error("Workspace not found.");
-    return save({ ...current, tenantId, id: workspaceId, sandbox: { ...current.sandbox, activeSandboxId: sandboxId || null } });
+    return save({ ...current, tenantId, id: workspaceId, sandbox: { ...current.sandbox, activeSandboxId: sandboxId || null }, prepared: null });
+  }
+
+  async function markPrepared(tenantId, workspaceId, prepared) {
+    const current = await get(tenantId, workspaceId);
+    if (!current) throw new Error("Workspace not found.");
+    return save({ ...current, tenantId, id: workspaceId, prepared });
   }
 
   async function connectGitHub(tenantId, workspaceId, github) {
@@ -180,8 +188,9 @@ export function createWorkspaceRegistry(options = {}) {
       id: workspaceId,
       repository: { ...current.repository, connected: true },
       github: { ...current.github, ...github, connectedAt: nowIso() },
+      prepared: null,
     });
   }
 
-  return { init, get, list, save, attachSandbox, connectGitHub, root };
+  return { init, get, list, save, attachSandbox, markPrepared, connectGitHub, root };
 }
