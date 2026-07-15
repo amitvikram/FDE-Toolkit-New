@@ -88,12 +88,16 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ wor
   if (!parsed.success) return NextResponse.json({ error: "Workspace settings are invalid.", details: parsed.error.flatten() }, { status: 400 });
   try {
     const current = await getProductWorkspace(session.leadId, workspaceId);
+    const requestedAgent = parsed.data.agent || {};
+    const safeAgent = requestedAgent.secretRef?.endsWith("://configured")
+      ? { ...requestedAgent, secretRef: current.workspace.agent.secretRef }
+      : requestedAgent;
     const result = await saveProductWorkspace(session.leadId, {
       ...current.workspace,
       ...parsed.data,
       id: workspaceId,
       repository: { ...current.workspace.repository, ...parsed.data.repository },
-      agent: { ...current.workspace.agent, ...parsed.data.agent },
+      agent: { ...current.workspace.agent, ...safeAgent },
       sandbox: { ...current.workspace.sandbox, ...parsed.data.sandbox },
       preview: { ...current.workspace.preview, ...parsed.data.preview },
       production: { ...current.workspace.production, ...parsed.data.production },
