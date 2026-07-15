@@ -39,7 +39,7 @@ async function githubRequest(path, token, options = {}) {
     headers: {
       accept: "application/vnd.github+json",
       authorization: `Bearer ${token}`,
-      "x-github-api-version": "2026-03-10",
+      "x-github-api-version": "2022-11-28",
       "user-agent": "FDE-Toolkit-GitHub-App",
       ...(options.body ? { "content-type": "application/json" } : {}),
       ...options.headers,
@@ -63,7 +63,7 @@ async function installationToken({ appId, privateKey, installationId, repo }) {
     method: "POST",
     body: JSON.stringify({
       repositories: [repo],
-      permissions: { contents: "write", pull_requests: "write", statuses: "read", checks: "read" },
+      permissions: { contents: "write", pull_requests: "write" },
     }),
   });
   return payload.token;
@@ -124,6 +124,7 @@ export async function createGitHubPromotion(job, input = {}) {
     policy: job.request.policy,
     approvals: job.approvals,
     evidence: job.evidence,
+    auditHeadHash: job.auditHeadHash || null,
     usage: job.usage,
     executionResult: job.result,
     timestamps: {
@@ -150,6 +151,7 @@ export async function createGitHubPromotion(job, input = {}) {
     `- Tenant: \`${job.tenantId}\``,
     `- Approval status: **${job.approvalStatus}**`,
     `- Evidence package: \`${evidencePath}\``,
+    `- Audit head: \`${job.auditHeadHash || "not-recorded"}\``,
     "",
     "This pull request was created by the FDE-Toolkit GitHub App after required approvals were recorded.",
   ].join("\n");
@@ -166,6 +168,7 @@ export async function createGitHubPromotion(job, input = {}) {
     branch,
     baseBranch,
     evidencePath,
+    auditHeadHash: job.auditHeadHash || null,
     commitSha: file.commit.sha,
     pullRequestNumber: pullRequest.number,
     pullRequestUrl: pullRequest.html_url,
