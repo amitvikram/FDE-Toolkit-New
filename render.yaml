@@ -13,6 +13,12 @@ services:
     envVars:
       - key: FDE_DEMO_ENABLED
         value: "true"
+      - key: FDE_EMBEDDED_EXECUTION_PLANE
+        value: "true"
+      - key: FDE_EXECUTION_PLANE_URL
+        value: http://127.0.0.1:8787
+      - key: FDE_EXECUTION_SIGNING_SECRET
+        value: render-public-demo-local-secret
       - key: FDE_DEMO_KEEP_WORKSPACES
         value: "false"
       - key: RESEND_API_KEY

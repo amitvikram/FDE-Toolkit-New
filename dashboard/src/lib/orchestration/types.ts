@@ -44,6 +44,34 @@ export type ChangedFile = {
   purpose: string;
 };
 
+export type ObservedFileChange = {
+  path: string;
+  operation: "added" | "modified" | "deleted";
+  bytes: number;
+  sha256: string;
+};
+
+export type ObservedCommand = {
+  argv: string[];
+  exitCode: number;
+  durationMs: number;
+  stdoutSha256: string;
+};
+
+export type ExecutionProvenance = {
+  formatVersion: "1.0";
+  capturedBy: "fde-execution-plane";
+  trustModel: "observed-not-self-reported";
+  observedAt: string;
+  filesystemDiff: ObservedFileChange[];
+  commands: ObservedCommand[];
+  tests: Array<{
+    name: string;
+    passed: boolean;
+    outputSha256: string;
+  }>;
+};
+
 export type PromotionPackage = {
   title: string;
   branchName: string;
@@ -71,10 +99,12 @@ export type OrchestrationResult = {
     secretsInjected: false;
     workspaceRetention: "ephemeral";
   };
+  executionBoundary: string;
   steps: OrchestrationStep[];
   cycleTimeMs: number;
   previewHtml: string;
   testOutput: string;
+  provenance: ExecutionProvenance;
   promotionPackage: PromotionPackage;
   disclaimer: string;
 };

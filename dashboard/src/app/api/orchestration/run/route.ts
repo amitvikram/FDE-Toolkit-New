@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { runDemoJob } from "@/lib/orchestration/demo-runner.mjs";
+import { dispatchExecutionJob } from "@/lib/orchestration/execution-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,25 +51,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "That provider is shown as adapter-ready but is not configured in the public demo. Select the FDE demo agent, local ephemeral workspace, and PR promotion package.",
+          "That driver is published but not configured in this demo. Select the FDE demo agent, local ephemeral sandbox, and PR promotion package.",
       },
       { status: 409 },
     );
   }
 
   try {
-    const result = await runDemoJob(input);
-    return NextResponse.json({ contractVersion: "2026-07-01", result });
+    const result = await dispatchExecutionJob(input);
+    return NextResponse.json({ contractVersion: "2026-07-15", result });
   } catch (error) {
-    console.error("Orchestration demo failed:", error);
+    console.error("Control plane could not dispatch execution:", error);
+    const message = error instanceof Error ? error.message : "The execution plane could not complete the run.";
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "The orchestration demo could not complete.",
+        error: `Execution plane unavailable or rejected the job. ${message}`,
       },
-      { status: 500 },
+      { status: 502 },
     );
   }
 }

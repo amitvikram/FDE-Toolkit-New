@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { PublicPage } from "@/components/marketing/PublicChrome";
 import { PlatformDemo } from "@/components/platform/PlatformDemo";
+import { ControlPlanePrinciples } from "@/components/platform/ControlPlanePrinciples";
+import { ExecutionPlaneStatus } from "@/components/platform/ExecutionPlaneStatus";
 
 export const metadata: Metadata = {
   title: "Integration Orchestrator",
@@ -17,7 +19,9 @@ export const metadata: Metadata = {
 export default function PlatformPage() {
   return (
     <PublicPage>
+      <ExecutionPlaneStatus />
       <PlatformDemo />
+      <ControlPlanePrinciples />
     </PublicPage>
   );
 }
