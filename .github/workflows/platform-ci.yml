@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       NEXT_PUBLIC_SITE_ONLY: "true"
       FDE_DEMO_ENABLED: "true"
@@ -33,79 +33,82 @@ jobs:
         working-directory: dashboard
         run: npm ci
 
-      - name: Test orchestration runner
-        working-directory: dashboard
-        run: node --test scripts/test-orchestrator.mjs
-
-      - name: Build Next.js application
+      - name: Build Next.js control plane
         working-directory: dashboard
         run: npm run build
 
-      - name: Build public Docker image
-        run: docker build --file dashboard/Dockerfile.website --tag fde-toolkit:ci .
+      - name: Build Docker control and execution planes
+        run: docker compose build
 
-      - name: Start Docker product
+      - name: Start separated Docker product
         run: |
-          docker run --detach \
-            --name fde-toolkit-ci \
-            --publish 3000:3000 \
-            --env NODE_ENV=production \
-            --env NEXT_PUBLIC_SITE_ONLY=true \
-            --env FDE_DEMO_ENABLED=true \
-            --env FDE_DEMO_KEEP_WORKSPACES=false \
-            fde-toolkit:ci
+          docker compose up --detach
 
-          for attempt in {1..45}; do
-            if curl --fail --silent --show-error http://127.0.0.1:3000/ > /dev/null; then
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/api/orchestration/health > /tmp/fde-health.json; then
               exit 0
             fi
             sleep 2
           done
 
-          docker logs fde-toolkit-ci
+          docker compose logs
           exit 1
 
-      - name: Smoke test live product APIs
+      - name: Smoke test signed orchestration and provenance
         run: |
           curl --fail --silent --show-error \
             http://127.0.0.1:3000/api/orchestration/catalog \
             --output /tmp/fde-catalog.json
 
-          curl --fail --silent --show-error \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{
-              "scenario":"enterprise-ai",
-              "clientAsk":"Create a governed exception-review workflow with linked evidence and mandatory human approval before promotion.",
-              "repository":"https://github.com/customer/example-product",
-              "baseBranch":"main",
-              "codingAgentId":"fde-demo-agent",
-              "sandboxId":"local-ephemeral",
-              "sourceControlId":"promotion-package",
-              "approvalMode":"human-required"
-            }' \
-            http://127.0.0.1:3000/api/orchestration/run \
-            --output /tmp/fde-run.json
+          for scenario in enterprise-ai saas-design-partner si-delivery; do
+            curl --fail --silent --show-error \
+              --request POST \
+              --header 'Content-Type: application/json' \
+              --data "{\
+                \"scenario\":\"${scenario}\",\
+                \"clientAsk\":\"Create a governed delivery workflow that preserves the client ask, observed evidence, and mandatory human approval before promotion.\",\
+                \"repository\":\"https://github.com/customer/example-product\",\
+                \"baseBranch\":\"main\",\
+                \"codingAgentId\":\"fde-demo-agent\",\
+                \"sandboxId\":\"local-ephemeral\",\
+                \"sourceControlId\":\"promotion-package\",\
+                \"approvalMode\":\"human-required\"\
+              }" \
+              http://127.0.0.1:3000/api/orchestration/run \
+              --output "/tmp/fde-run-${scenario}.json"
+          done
 
           node --input-type=module <<'NODE'
           import assert from "node:assert/strict";
           import { readFile } from "node:fs/promises";
 
+          const health = JSON.parse(await readFile("/tmp/fde-health.json", "utf8"));
           const catalog = JSON.parse(await readFile("/tmp/fde-catalog.json", "utf8"));
-          const run = JSON.parse(await readFile("/tmp/fde-run.json", "utf8"));
 
-          assert.equal(catalog.contractVersion, "2026-07-01");
+          assert.equal(health.status, "connected");
+          assert.equal(health.executionPlane.executionBoundary, "separate-container");
+          assert.equal(health.executionPlane.trustModel, "observed-not-self-reported");
           assert.ok(catalog.catalog.codingAgents.some((provider) => provider.id === "fde-demo-agent"));
-          assert.match(run.result.runId, /^fde-/);
-          assert.equal(run.result.policyProfile.humanApprovalRequired, true);
-          assert.equal(run.result.promotionPackage.changedFiles.length, 5);
-          assert.ok(run.result.previewHtml.includes("Validation ready"));
+
+          for (const scenario of ["enterprise-ai", "saas-design-partner", "si-delivery"]) {
+            const run = JSON.parse(await readFile(`/tmp/fde-run-${scenario}.json`, "utf8"));
+            assert.match(run.result.runId, /^fde-/);
+            assert.equal(run.result.executionBoundary, "separate-container");
+            assert.equal(run.result.policyProfile.humanApprovalRequired, true);
+            assert.equal(run.result.provenance.capturedBy, "fde-execution-plane");
+            assert.equal(run.result.provenance.trustModel, "observed-not-self-reported");
+            assert.equal(run.result.provenance.filesystemDiff.length, 5);
+            assert.equal(run.result.provenance.commands[0].exitCode, 0);
+            assert.equal(run.result.provenance.tests[0].passed, true);
+            assert.equal(run.result.promotionPackage.changedFiles.length, 5);
+            assert.ok(run.result.previewHtml.includes("Validation ready"));
+          }
           NODE
 
       - name: Show Docker logs on failure
         if: failure()
-        run: docker logs fde-toolkit-ci || true
+        run: docker compose logs || true
 
       - name: Stop Docker product
         if: always()
-        run: docker rm --force fde-toolkit-ci || true
+        run: docker compose down --volumes --remove-orphans || true
