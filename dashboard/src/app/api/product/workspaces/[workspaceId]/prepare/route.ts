@@ -20,7 +20,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
   if (!parsed.success) return NextResponse.json({ error: "Invalid sandbox selection." }, { status: 400 });
   try {
     const result = await prepareProductWorkspace(access.leadId, workspaceId, parsed.data.sandboxId);
-    return NextResponse.json({ ...result, workspace: publicProductWorkspace(result.workspace), prepared: result.workspace.prepared });
+    const workspace = publicProductWorkspace(result.workspace);
+    return NextResponse.json({ workspace, sandbox: result.sandbox, prepared: workspace.prepared });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Repository could not be prepared." }, { status: 502 });
   }
