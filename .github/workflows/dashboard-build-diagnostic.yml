@@ -1,0 +1,33 @@
+name: Dashboard Build Diagnostic
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Build dashboard with focused failure output
+        shell: bash
+        run: |
+          cd dashboard
+          npm ci --silent > /dev/null 2>&1
+          set +e
+          npm run build > /tmp/dashboard-build.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "DASHBOARD_BUILD_FAILURE"
+            tail -n 80 /tmp/dashboard-build.log
+            exit "$status"
+          fi
+          tail -n 20 /tmp/dashboard-build.log
