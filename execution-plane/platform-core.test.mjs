@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPlatformCore } from "./platform-core.mjs";
+import { createSandboxGateway } from "./sandbox-gateway.mjs";
 
 async function waitForJob(core, tenantId, jobId, acceptedStatuses, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
@@ -118,5 +119,42 @@ test("role policy blocks unauthorized approvals", async () => {
     assert.doesNotThrow(() => core.authorize({ role: "approver" }, "approval:record"));
   } finally {
     await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("sandbox gateway provisions local workspaces and produces constrained Kubernetes Jobs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fde-sandbox-gateway-"));
+  try {
+    const gateway = createSandboxGateway({
+      workspaceRoot: join(root, "workspaces"),
+      metadataRoot: join(root, "metadata"),
+      dockerCommand: "docker-command-not-installed-for-test",
+      kubectlCommand: "kubectl-command-not-installed-for-test",
+    });
+    await gateway.init();
+
+    const local = await gateway.provision({ tenantId: "acme", driverId: "local-ephemeral", timeoutSeconds: 30 });
+    assert.equal(local.status, "ready");
+    assert.match(local.id, /^sbx-/);
+    assert.equal((await gateway.get(local.id)).workspaceMount, local.workspaceMount);
+    assert.equal((await gateway.destroy(local.id)).status, "destroyed");
+
+    const kubernetes = await gateway.provision({
+      tenantId: "acme",
+      driverId: "kubernetes-job",
+      namespace: "fde-execution",
+      image: "node:22-alpine",
+      cpu: 1,
+      memoryMb: 512,
+      timeoutSeconds: 120,
+      apply: false,
+    });
+    assert.equal(kubernetes.status, "manifest-ready");
+    assert.equal(kubernetes.manifest.kind, "Job");
+    assert.equal(kubernetes.manifest.spec.activeDeadlineSeconds, 120);
+    assert.equal(kubernetes.manifest.spec.template.spec.automountServiceAccountToken, false);
+    assert.equal(kubernetes.manifest.spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
