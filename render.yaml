@@ -11,6 +11,10 @@ services:
     domains:
       - fde-toolkit.com
     envVars:
+      - key: FDE_DEMO_ENABLED
+        value: "true"
+      - key: FDE_DEMO_KEEP_WORKSPACES
+        value: "false"
       - key: RESEND_API_KEY
         sync: false
       - key: INTEREST_NOTIFICATION_EMAIL
