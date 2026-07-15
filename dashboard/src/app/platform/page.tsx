@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
 import { PublicPage } from "@/components/marketing/PublicChrome";
-import { ExecutiveDemo } from "@/components/platform/ExecutiveDemo";
+import { GuidedExecutiveDemo } from "@/components/platform/GuidedExecutiveDemo";
 import { ControlPlanePrinciples } from "@/components/platform/ControlPlanePrinciples";
 import { ExecutionPlaneStatus } from "@/components/platform/ExecutionPlaneStatus";
 
 export const metadata: Metadata = {
-  title: "Executive Demo",
+  title: "Guided Executive Demo",
   description:
-    "Watch a realistic enterprise, SaaS, or systems-integrator client request become a governed product proof, evidence package, approval decision, and reviewable PR package.",
+    "Run a realistic enterprise, SaaS, or systems-integrator request, then inspect each governed milestone before opening the executive decision brief.",
   openGraph: {
-    title: "FDE-Toolkit Executive Demo",
+    title: "FDE-Toolkit Guided Executive Demo",
     description:
-      "From a real client ask to a governed engineering decision—with business outcomes, human approvals, working product proof, and observed provenance.",
+      "See how a client ask becomes a governed engineering decision through a user-paced walkthrough of policy, execution, product proof, provenance, and approvals.",
     url: "/platform",
   },
 };
@@ -20,7 +20,7 @@ export default function PlatformPage() {
   return (
     <PublicPage>
       <ExecutionPlaneStatus />
-      <ExecutiveDemo />
+      <GuidedExecutiveDemo />
       <ControlPlanePrinciples />
     </PublicPage>
   );
