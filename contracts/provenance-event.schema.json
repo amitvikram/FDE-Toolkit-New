@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fde-toolkit.com/contracts/provenance-event.schema.json",
+  "title": "FDE-Toolkit Provenance Event",
+  "description": "Hash-chained event written by FDE-Toolkit instrumentation at the execution boundary.",
+  "type": "object",
+  "required": [
+    "formatVersion",
+    "sequence",
+    "tenantId",
+    "jobId",
+    "type",
+    "observedAt",
+    "source",
+    "payload",
+    "previousHash",
+    "hash"
+  ],
+  "properties": {
+    "formatVersion": { "const": "1.0" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "tenantId": { "type": "string", "minLength": 1 },
+    "jobId": { "type": "string", "minLength": 8 },
+    "type": {
+      "type": "string",
+      "enum": [
+        "job.accepted",
+        "job.queued",
+        "job.started",
+        "job.completed",
+        "job.failed",
+        "job.cancelled",
+        "policy.bound",
+        "driver.selected",
+        "sandbox.provisioned",
+        "agent.plan",
+        "agent.question",
+        "filesystem.diff",
+        "command.executed",
+        "test.completed",
+        "usage.reported",
+        "evidence.ingested",
+        "approval.recorded",
+        "promotion.requested",
+        "promotion.completed",
+        "callback.delivered",
+        "callback.failed"
+      ]
+    },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "string",
+      "enum": ["fde-control-plane", "fde-execution-plane", "agent-driver", "sandbox-driver", "customer-gateway", "scm-driver", "ci-ingestion"]
+    },
+    "payload": { "type": "object" },
+    "previousHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  },
+  "additionalProperties": false
+}
