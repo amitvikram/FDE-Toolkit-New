@@ -1,27 +1,29 @@
 import type { Metadata } from "next";
-import { PublicPage } from "@/components/marketing/PublicChrome";
-import { GuidedExecutiveDemo } from "@/components/platform/GuidedExecutiveDemo";
-import { ControlPlanePrinciples } from "@/components/platform/ControlPlanePrinciples";
-import { ExecutionPlaneStatus } from "@/components/platform/ExecutionPlaneStatus";
+import { cookies } from "next/headers";
+import { ProductAccessGate } from "@/components/platform/ProductAccessGate";
+import { FDEProductWorkspace } from "@/components/platform/FDEProductWorkspace";
+import {
+  PRODUCT_ACCESS_COOKIE,
+  verifyProductAccessToken,
+} from "@/lib/product-access";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Guided Executive Demo",
+  title: "Product Workspace",
   description:
-    "Run a realistic enterprise, SaaS, or systems-integrator request, then inspect each governed milestone before opening the executive decision brief.",
-  openGraph: {
-    title: "FDE-Toolkit Guided Executive Demo",
-    description:
-      "See how a client ask becomes a governed engineering decision through a user-paced walkthrough of policy, execution, product proof, provenance, and approvals.",
-    url: "/platform",
+    "Private FDE-Toolkit workspace for creating governed delivery jobs, inspecting generated products and evidence, recording approvals, and reviewing promotion readiness.",
+  robots: {
+    index: false,
+    follow: false,
   },
 };
 
-export default function PlatformPage() {
-  return (
-    <PublicPage>
-      <ExecutionPlaneStatus />
-      <GuidedExecutiveDemo />
-      <ControlPlanePrinciples />
-    </PublicPage>
+export default async function PlatformPage() {
+  const cookieStore = await cookies();
+  const access = verifyProductAccessToken(
+    cookieStore.get(PRODUCT_ACCESS_COOKIE)?.value,
   );
+
+  return access ? <FDEProductWorkspace /> : <ProductAccessGate />;
 }
