@@ -1,8 +1,6 @@
 import { spawn } from "node:child_process";
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
-  appendFile,
-  mkdir,
   readFile,
   readdir,
   rename,
@@ -11,7 +9,6 @@ import {
 } from "node:fs/promises";
 import { delimiter, join, relative, resolve, sep } from "node:path";
 import { existsSync } from "node:fs";
-import { runDemoExecution } from "./demo-runner.mjs";
 
 export const CONTRACT_VERSION = "1.0";
 export const PLATFORM_VERSION = "2026-07-15.1";
@@ -124,6 +121,14 @@ export function normalizeRequest(input = {}) {
     },
     limits: normalizeLimits(input.limits),
     workspace: input.workspace || null,
+    secretRefs: input.secretRefs && typeof input.secretRefs === "object"
+      ? Object.fromEntries(Object.entries(input.secretRefs).slice(0, 50).map(([name, reference]) => {
+          if (!/^[A-Z][A-Z0-9_]{0,127}$/.test(name)) throw new Error(`Invalid secret environment key ${name}.`);
+          const value = String(reference);
+          if (!/^(env|vault|aws-sm|azure-kv):\/\//.test(value)) throw new Error(`Unsupported secret reference for ${name}.`);
+          return [name, value];
+        }))
+      : {},
     callbackUrl,
     metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {},
   };
@@ -162,6 +167,7 @@ export function publicJob(job) {
       requiredApprovals: request.requiredApprovals,
       policy: request.policy,
       limits: request.limits,
+      secretRefs: request.secretRefs,
       callbackUrl: request.callbackUrl,
       metadata: request.metadata,
     },
@@ -354,7 +360,7 @@ function mapAgentEvent(driverId, rawEvent) {
   return { type: rawEvent.type && CUSTOMER_EVENT_TYPES.has(rawEvent.type) ? rawEvent.type : "plan", payload: rawEvent };
 }
 
-function allowedChildEnv(driverId) {
+function allowedChildEnv(driverId, runtimeSecrets = {}) {
   const names = new Set(["PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "NODE_ENV"]);
   if (driverId === "openai-codex") names.add("CODEX_API_KEY");
   if (driverId === "claude-agent") {
@@ -362,7 +368,8 @@ function allowedChildEnv(driverId) {
     names.add("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS");
   }
   if (driverId === "cursor-agent") names.add("CURSOR_API_KEY");
-  return Object.fromEntries([...names].filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]]));
+  const inherited = Object.fromEntries([...names].filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]]));
+  return { ...inherited, ...runtimeSecrets };
 }
 
 function resolveWorkspacePath(request) {
@@ -419,7 +426,7 @@ function commandSpec(request) {
   throw new Error(`Unsupported command driver ${request.driverId}.`);
 }
 
-export async function runCommandDriver(request, emit) {
+export async function runCommandDriver(request, emit, runtimeSecrets = {}) {
   const workspace = resolveWorkspacePath(request);
   const workspaceInfo = await stat(workspace).catch(() => null);
   if (!workspaceInfo?.isDirectory()) throw new Error("The sandbox workspace does not exist.");
@@ -430,7 +437,7 @@ export async function runCommandDriver(request, emit) {
   const commandStartedAt = Date.now();
   const child = spawn(command, args, {
     cwd: workspace,
-    env: allowedChildEnv(request.driverId),
+    env: allowedChildEnv(request.driverId, runtimeSecrets),
     shell: false,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
