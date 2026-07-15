@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PRODUCT_ACCESS_COOKIE, verifyProductAccessToken } from "@/lib/product-access";
 import { destroyProductSandbox, publicProductWorkspace } from "@/lib/orchestration/platform-client";
+import { publicProductSandbox } from "@/lib/public-product-sandbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,10 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   }
   try {
     const result = await destroyProductSandbox(access.leadId, sandboxId);
-    return NextResponse.json({ ...result, workspace: result.workspace ? publicProductWorkspace(result.workspace) : null });
+    return NextResponse.json({
+      workspace: result.workspace ? publicProductWorkspace(result.workspace) : null,
+      sandbox: publicProductSandbox(result.sandbox),
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Sandbox could not be destroyed." }, { status: 502 });
   }
