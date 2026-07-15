@@ -5,6 +5,7 @@ import {
   verifyProductAccessToken,
 } from "@/lib/product-access";
 import { recordProductApproval } from "@/lib/orchestration/platform-client";
+import { publicProductJob } from "@/lib/public-product-job";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,9 +55,8 @@ export async function POST(
   }
 
   try {
-    return NextResponse.json(
-      await recordProductApproval(access.leadId, jobId, parsed.data),
-    );
+    const result = await recordProductApproval(access.leadId, jobId, parsed.data);
+    return NextResponse.json({ job: publicProductJob(result.job) });
   } catch (error) {
     return NextResponse.json(
       {
