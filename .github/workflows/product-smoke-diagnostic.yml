@@ -1,0 +1,67 @@
+name: Product Smoke Diagnostic
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  product-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Build and start product
+        shell: bash
+        run: |
+          docker compose build > /tmp/product-build.log 2>&1
+          docker compose up --detach > /tmp/product-start.log 2>&1
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/orchestration/health > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+
+      - name: Run gated workspace smoke
+        shell: bash
+        run: |
+          set +e
+          node dashboard/scripts/smoke-gated-product.mjs > /tmp/product-smoke.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/product-smoke.log
+          exit "$status"
+
+      - name: Upload product smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-smoke-log
+          path: /tmp/product-smoke.log
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Show Docker logs on failure
+        if: failure()
+        run: docker compose logs > /tmp/product-docker.log 2>&1 || true
+
+      - name: Upload Docker logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-docker-log
+          path: /tmp/product-docker.log
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Stop product
+        if: always()
+        run: docker compose down --volumes --remove-orphans || true
