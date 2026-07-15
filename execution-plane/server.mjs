@@ -5,12 +5,14 @@ import { createPlatformCore } from "./platform-core.mjs";
 import { CONTRACT_VERSION, PLATFORM_VERSION } from "./platform-runtime.mjs";
 import { createGitHubPromotion, githubAppConfigured } from "./github-app.mjs";
 import { createSandboxGateway } from "./sandbox-gateway.mjs";
+import { createCredentialBroker } from "./credential-broker.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const signingSecret = process.env.FDE_EXECUTION_SIGNING_SECRET || "local-demo-signing-secret";
 const maxClockSkewMs = 5 * 60 * 1000;
 const maxBodyBytes = 1024 * 1024;
-const core = createPlatformCore();
+const credentialBroker = createCredentialBroker();
+const core = createPlatformCore({ credentialBroker });
 const sandboxes = createSandboxGateway({ metadataRoot: `${core.dataDir}/sandboxes` });
 await Promise.all([core.init(), sandboxes.init()]);
 
@@ -106,6 +108,7 @@ const server = createServer(async (request, response) => {
         queue: core.queueStats(),
         githubAppConfigured: githubAppConfigured(),
         sandboxDrivers: sandboxes.catalog(),
+        secretProviders: credentialBroker.catalog(),
       });
     }
 
@@ -115,6 +118,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/v1/sandboxes/drivers") {
       return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, drivers: sandboxes.catalog() });
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/secrets/providers") {
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, providers: credentialBroker.catalog() });
     }
 
     const sandboxMatch = url.pathname.match(/^\/v1\/sandboxes\/([^/]+)$/);
