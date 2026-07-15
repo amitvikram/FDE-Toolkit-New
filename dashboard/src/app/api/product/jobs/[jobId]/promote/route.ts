@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { PRODUCT_ACCESS_COOKIE, verifyProductAccessToken } from "@/lib/product-access";
 import { promoteProductJob } from "@/lib/orchestration/platform-client";
+import { publicProductJob } from "@/lib/public-product-job";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ jo
   const parsed = schema.safeParse(payload);
   if (!parsed.success) return NextResponse.json({ error: "A valid workspace is required." }, { status: 400 });
   try {
-    return NextResponse.json(await promoteProductJob(access.leadId, jobId, parsed.data.workspaceId), { status: 201 });
+    const result = await promoteProductJob(access.leadId, jobId, parsed.data.workspaceId);
+    return NextResponse.json({ ...result, job: publicProductJob(result.job) }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The pull request could not be created." }, { status: 502 });
   }
