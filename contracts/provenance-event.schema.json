@@ -33,6 +33,9 @@
         "policy.bound",
         "driver.selected",
         "sandbox.provisioned",
+        "sandbox.destroyed",
+        "secret.lease.issued",
+        "secret.lease.revoked",
         "agent.plan",
         "agent.question",
         "filesystem.diff",
@@ -43,6 +46,7 @@
         "approval.recorded",
         "promotion.requested",
         "promotion.completed",
+        "promotion.merged",
         "callback.delivered",
         "callback.failed"
       ]
