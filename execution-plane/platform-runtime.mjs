@@ -11,7 +11,7 @@ import { delimiter, join, relative, resolve, sep } from "node:path";
 import { existsSync } from "node:fs";
 
 export const CONTRACT_VERSION = "1.0";
-export const PLATFORM_VERSION = "2026-07-15.1";
+export const PLATFORM_VERSION = "2026-07-15.2";
 
 export const ZERO_HASH = "0".repeat(64);
 export const FINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
@@ -61,12 +61,34 @@ function clampNumber(value, fallback, min, max) {
   return Math.max(min, Math.min(max, parsed));
 }
 
+function cleanPath(value, maxLength = 1000) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return null;
+  if (text.length > maxLength || text.includes("\0")) throw new Error("Workspace path is invalid.");
+  return text;
+}
+
 export function normalizeLimits(input = {}) {
   return {
     timeoutMs: clampInteger(input.timeoutMs, DEFAULT_LIMITS.timeoutMs, 1_000, 2 * 60 * 60 * 1_000),
     maxEvents: clampInteger(input.maxEvents, DEFAULT_LIMITS.maxEvents, 1, 100_000),
     maxOutputBytes: clampInteger(input.maxOutputBytes, DEFAULT_LIMITS.maxOutputBytes, 1_024, 1024 * 1024 * 1024),
     maxCostUsd: clampNumber(input.maxCostUsd, DEFAULT_LIMITS.maxCostUsd, 0, 100_000),
+  };
+}
+
+function normalizeWorkspace(input) {
+  if (!input || typeof input !== "object") return null;
+  return {
+    sandboxId: input.sandboxId ? safeId(input.sandboxId, "workspace sandbox ID") : null,
+    source: String(input.source || "sandbox").slice(0, 80),
+    repository: input.repository ? String(input.repository).slice(0, 500) : null,
+    baseBranch: String(input.baseBranch || "main").slice(0, 120),
+    repositoryRoot: cleanPath(input.repositoryRoot),
+    mountPath: cleanPath(input.mountPath),
+    projectPath: String(input.projectPath || "").replace(/^[/\\]+|[/\\]+$/g, "").slice(0, 300),
+    previewOutputPath: String(input.previewOutputPath || "index.html").replace(/^[/\\]+/, "").slice(0, 300),
+    preparedAt: input.preparedAt || null,
   };
 }
 
@@ -120,7 +142,7 @@ export function normalizeRequest(input = {}) {
         : [],
     },
     limits: normalizeLimits(input.limits),
-    workspace: input.workspace || null,
+    workspace: normalizeWorkspace(input.workspace),
     secretRefs: input.secretRefs && typeof input.secretRefs === "object"
       ? Object.fromEntries(Object.entries(input.secretRefs).slice(0, 50).map(([name, reference]) => {
           if (!/^[A-Z][A-Z0-9_]{0,127}$/.test(name)) throw new Error(`Invalid secret environment key ${name}.`);
@@ -167,7 +189,16 @@ export function publicJob(job) {
       requiredApprovals: request.requiredApprovals,
       policy: request.policy,
       limits: request.limits,
-      secretRefs: request.secretRefs,
+      secretRefs: Object.fromEntries(Object.entries(request.secretRefs || {}).map(([name, reference]) => [name, `${String(reference).split("://")[0]}://configured`])),
+      workspace: request.workspace ? {
+        sandboxId: request.workspace.sandboxId,
+        source: request.workspace.source,
+        repository: request.workspace.repository,
+        baseBranch: request.workspace.baseBranch,
+        projectPath: request.workspace.projectPath,
+        previewOutputPath: request.workspace.previewOutputPath,
+        preparedAt: request.workspace.preparedAt,
+      } : null,
       callbackUrl: request.callbackUrl,
       metadata: request.metadata,
     },
@@ -222,7 +253,7 @@ export function getDriverCatalog() {
       vendor: "FDE-Toolkit",
       protocol: "in-process",
       status: "available",
-      capabilities: ["plan", "file-diffs", "command-events", "test-events", "structured-output"],
+      capabilities: ["plan", "file-diffs", "command-events", "test-events", "structured-output", "preview-output"],
       deploymentModes: ["toolkit-cloud", "client-vpc", "air-gapped", "local"],
     },
     {
@@ -233,7 +264,7 @@ export function getDriverCatalog() {
       protocol: "process-jsonl",
       status: findExecutable(codexCommand) ? "configured" : "requires-runtime",
       command: codexCommand,
-      capabilities: ["plan", "streaming-events", "file-diffs", "command-events", "usage", "session-resume", "mcp"],
+      capabilities: ["plan", "streaming-events", "file-diffs", "command-events", "usage", "session-resume", "mcp", "preview-output"],
       deploymentModes: ["client-vpc", "air-gapped", "local"],
     },
     {
@@ -244,7 +275,7 @@ export function getDriverCatalog() {
       protocol: "process-jsonl",
       status: findExecutable(claudeCommand) ? "configured" : "requires-runtime",
       command: claudeCommand,
-      capabilities: ["plan", "streaming-events", "file-diffs", "command-events", "clarifying-questions", "usage", "session-resume", "mcp"],
+      capabilities: ["plan", "streaming-events", "file-diffs", "command-events", "clarifying-questions", "usage", "session-resume", "mcp", "preview-output"],
       deploymentModes: ["client-vpc", "local"],
     },
     {
@@ -255,7 +286,7 @@ export function getDriverCatalog() {
       protocol: "process-jsonl",
       status: cursorCommand ? "configured" : "requires-command-contract",
       command: cursorCommand || null,
-      capabilities: ["streaming-events", "file-diffs", "command-events"],
+      capabilities: ["streaming-events", "file-diffs", "command-events", "preview-output"],
       deploymentModes: ["client-vpc", "local"],
     },
     {
@@ -383,8 +414,23 @@ function resolveWorkspacePath(request) {
   return workspace;
 }
 
+function agentPrompt(request) {
+  const previewPath = request.workspace?.previewOutputPath || "index.html";
+  return [
+    request.intent,
+    "",
+    "FDE execution requirements:",
+    `- Work only inside the current repository workspace.`,
+    `- Produce a client-reviewable application preview at ${previewPath}.`,
+    "- Run the repository's relevant tests or add a focused test when none exists.",
+    "- Do not deploy, merge, push, or create a pull request.",
+    "- Do not print credentials or secret values.",
+    "- Leave the workspace in a reviewable state; FDE will independently observe files, commands, and evidence.",
+  ].join("\n");
+}
+
 function commandSpec(request) {
-  const prompt = request.intent;
+  const prompt = agentPrompt(request);
   if (request.driverId === "openai-codex") {
     return {
       command: commandFromEnv("FDE_CODEX_COMMAND", "codex"),
@@ -426,7 +472,59 @@ function commandSpec(request) {
   throw new Error(`Unsupported command driver ${request.driverId}.`);
 }
 
+function safePreviewPath(workspace, relativePath) {
+  const candidate = resolve(workspace, String(relativePath || "index.html"));
+  if (candidate !== workspace && !candidate.startsWith(`${workspace}${sep}`)) throw new Error("Unsafe preview output path.");
+  return candidate;
+}
+
+async function loadPreviewHtml(workspace, request) {
+  const candidates = [
+    request.workspace?.previewOutputPath,
+    "index.html",
+    "src/index.html",
+    "dist/index.html",
+    "build/index.html",
+  ].filter(Boolean);
+  for (const candidate of [...new Set(candidates)]) {
+    const path = safePreviewPath(workspace, candidate);
+    const info = await stat(path).catch(() => null);
+    if (!info?.isFile() || info.size > 2 * 1024 * 1024) continue;
+    return { html: await readFile(path, "utf8"), path: String(candidate).replaceAll("\\", "/") };
+  }
+  return { html: null, path: null };
+}
+
+function promotionPackage(request, observedDiff, previewPath) {
+  const approvals = request.requiredApprovals.length ? request.requiredApprovals : ["Client approver", "Product owner", "Engineering reviewer"];
+  const title = `FDE governed change: ${request.intent.slice(0, 90)}`;
+  return {
+    title,
+    branchName: `fde/${request.metadata?.workspaceId || "workspace"}-${randomUUID().slice(0, 6)}`,
+    commitMessage: `feat: ${request.intent.slice(0, 72)}`,
+    body: [
+      "## Client request",
+      request.intent,
+      "",
+      "## Observed execution",
+      `- Driver: ${request.driverId}`,
+      `- Files changed: ${observedDiff.length}`,
+      `- Preview output: ${previewPath || "not detected"}`,
+      "- Promotion remains blocked pending human approval",
+      "",
+      "## Required approvals",
+      ...approvals.map((approval) => `- [ ] ${approval}`),
+    ].join("\n"),
+    changedFiles: observedDiff.map((change) => ({ path: change.path, bytes: change.bytes, purpose: "Observed agent workspace change" })),
+    approvalsRequired: approvals,
+    evidence: ["Original client request", "Observed filesystem diff", "Observed agent process", "Agent event stream"],
+    testSummary: "Review observed command and agent events before approval.",
+  };
+}
+
 export async function runCommandDriver(request, emit, runtimeSecrets = {}) {
+  const runId = `fde-${randomUUID().slice(0, 8)}`;
+  const startedAt = Date.now();
   const workspace = resolveWorkspacePath(request);
   const workspaceInfo = await stat(workspace).catch(() => null);
   if (!workspaceInfo?.isDirectory()) throw new Error("The sandbox workspace does not exist.");
@@ -468,33 +566,66 @@ export async function runCommandDriver(request, emit, runtimeSecrets = {}) {
   const afterSnapshot = await snapshotWorkspace(workspace);
   const observedDiff = diffWorkspace(beforeSnapshot, afterSnapshot);
   for (const file of observedDiff) await emit({ type: "file_diff", payload: file });
-  await emit({
-    type: "command_run",
-    payload: {
-      argv: [command, ...args],
-      exitCode,
-      durationMs: Date.now() - commandStartedAt,
-      stdoutSha256: sha256(stdout),
-      stderrSha256: sha256(stderr),
-      capturedBy: "fde-execution-plane",
-    },
-  });
+  const observedCommand = {
+    argv: [command, ...args],
+    exitCode,
+    durationMs: Date.now() - commandStartedAt,
+    stdoutSha256: sha256(stdout),
+    stderrSha256: sha256(stderr),
+    capturedBy: "fde-execution-plane",
+  };
+  await emit({ type: "command_run", payload: observedCommand });
 
   if (totalBytes > request.limits.maxOutputBytes) throw new Error("Agent output exceeded maxOutputBytes.");
   const rawEvents = parseJsonLines(stdout);
   if (rawEvents.length + observedDiff.length + 1 > request.limits.maxEvents) throw new Error("Agent output exceeded maxEvents.");
-  for (const rawEvent of rawEvents) await emit(mapAgentEvent(request.driverId, rawEvent));
+  const mappedEvents = rawEvents.map((rawEvent) => mapAgentEvent(request.driverId, rawEvent));
+  for (const event of mappedEvents) await emit(event);
   if (exitCode !== 0) throw new Error(`Agent driver exited with code ${exitCode}. ${stderr.slice(-4000)}`);
 
-  const usage = rawEvents
-    .map((event) => mapAgentEvent(request.driverId, event))
-    .filter((event) => event.type === "usage")
-    .map((event) => event.payload)
-    .at(-1) || {};
+  const usage = mappedEvents.filter((event) => event.type === "usage").map((event) => event.payload).at(-1) || {};
   const costUsd = Number(usage.totalCostUsd ?? usage.total_cost_usd ?? 0) || 0;
   if (costUsd > request.limits.maxCostUsd) throw new Error("Agent-reported cost exceeded maxCostUsd.");
+  const preview = await loadPreviewHtml(workspace, request);
+  const tests = mappedEvents
+    .filter((event) => event.type === "test_result")
+    .map((event, index) => ({ name: event.payload?.name || `Agent test ${index + 1}`, passed: event.payload?.passed !== false, outputSha256: sha256(stableJson(event.payload || {})) }));
 
   return {
+    runId,
+    scenario: request.scenario,
+    clientAsk: request.intent,
+    providers: { codingAgent: request.driverId, sandbox: request.sandboxId, sourceControl: request.sourceControlId },
+    policyProfile: {
+      humanApprovalRequired: true,
+      networkAccess: request.policy.networkAccess,
+      arbitraryCommands: request.policy.allowedCommands.length ? "allowlisted" : "agent-sandboxed",
+      secretsInjected: Object.keys(runtimeSecrets).length > 0,
+      workspaceRetention: "until-promotion-or-expiry",
+    },
+    executionBoundary: process.env.FDE_EXECUTION_BOUNDARY || "separate-container",
+    steps: [
+      { id: "workspace-bound", label: "Workspace and repository bound", status: "completed", detail: "The configured sandbox workspace became the agent working directory.", durationMs: 0 },
+      { id: "agent-finished", label: `${request.driverId} completed`, status: "completed", detail: "FDE captured the agent process and independently observed repository changes.", durationMs: observedCommand.durationMs },
+      { id: "preview-ready", label: "Preview output collected", status: preview.html ? "completed" : "ready", detail: preview.html ? `Preview collected from ${preview.path}.` : "No static preview output was detected; review the file evidence.", durationMs: 0 },
+      { id: "approval-ready", label: "Human approval required", status: "ready", detail: "The observed change cannot be promoted until the configured approval workflow completes.", durationMs: 0 },
+    ],
+    cycleTimeMs: Date.now() - startedAt,
+    previewHtml: preview.html,
+    previewPath: preview.path,
+    testOutput: tests.length ? `${tests.length} structured test events reported.` : "Inspect observed command events and repository tests before approval.",
+    observedDiff,
+    provenance: {
+      formatVersion: "1.0",
+      capturedBy: "fde-execution-plane",
+      trustModel: "observed-not-self-reported",
+      observedAt: nowIso(),
+      filesystemDiff: observedDiff,
+      commands: [observedCommand],
+      tests,
+    },
+    promotionPackage: promotionPackage(request, observedDiff, preview.path),
+    workspace: { source: request.workspace?.source, repository: request.workspace?.repository, projectPath: request.workspace?.projectPath },
     driverId: request.driverId,
     exitCode,
     stdoutSha256: sha256(stdout),
@@ -502,5 +633,6 @@ export async function runCommandDriver(request, emit, runtimeSecrets = {}) {
     eventCount: rawEvents.length,
     usage,
     costUsd,
+    disclaimer: "FDE-Toolkit independently observed repository changes and process execution. Agent event streams are supplemental evidence, not the source of truth.",
   };
 }
