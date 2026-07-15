@@ -1,0 +1,111 @@
+name: Platform CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SITE_ONLY: "true"
+      FDE_DEMO_ENABLED: "true"
+      FDE_DEMO_KEEP_WORKSPACES: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Test orchestration runner
+        working-directory: dashboard
+        run: node --test scripts/test-orchestrator.mjs
+
+      - name: Build Next.js application
+        working-directory: dashboard
+        run: npm run build
+
+      - name: Build public Docker image
+        run: docker build --file dashboard/Dockerfile.website --tag fde-toolkit:ci .
+
+      - name: Start Docker product
+        run: |
+          docker run --detach \
+            --name fde-toolkit-ci \
+            --publish 3000:3000 \
+            --env NODE_ENV=production \
+            --env NEXT_PUBLIC_SITE_ONLY=true \
+            --env FDE_DEMO_ENABLED=true \
+            --env FDE_DEMO_KEEP_WORKSPACES=false \
+            fde-toolkit:ci
+
+          for attempt in {1..45}; do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/ > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs fde-toolkit-ci
+          exit 1
+
+      - name: Smoke test live product APIs
+        run: |
+          curl --fail --silent --show-error \
+            http://127.0.0.1:3000/api/orchestration/catalog \
+            --output /tmp/fde-catalog.json
+
+          curl --fail --silent --show-error \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{
+              "scenario":"enterprise-ai",
+              "clientAsk":"Create a governed exception-review workflow with linked evidence and mandatory human approval before promotion.",
+              "repository":"https://github.com/customer/example-product",
+              "baseBranch":"main",
+              "codingAgentId":"fde-demo-agent",
+              "sandboxId":"local-ephemeral",
+              "sourceControlId":"promotion-package",
+              "approvalMode":"human-required"
+            }' \
+            http://127.0.0.1:3000/api/orchestration/run \
+            --output /tmp/fde-run.json
+
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFile } from "node:fs/promises";
+
+          const catalog = JSON.parse(await readFile("/tmp/fde-catalog.json", "utf8"));
+          const run = JSON.parse(await readFile("/tmp/fde-run.json", "utf8"));
+
+          assert.equal(catalog.contractVersion, "2026-07-01");
+          assert.ok(catalog.catalog.codingAgents.some((provider) => provider.id === "fde-demo-agent"));
+          assert.match(run.result.runId, /^fde-/);
+          assert.equal(run.result.policyProfile.humanApprovalRequired, true);
+          assert.equal(run.result.promotionPackage.changedFiles.length, 5);
+          assert.ok(run.result.previewHtml.includes("Validation ready"));
+          NODE
+
+      - name: Show Docker logs on failure
+        if: failure()
+        run: docker logs fde-toolkit-ci || true
+
+      - name: Stop Docker product
+        if: always()
+        run: docker rm --force fde-toolkit-ci || true

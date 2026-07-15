@@ -19,13 +19,16 @@ export function PublicHeader() {
           <div className="leading-tight">
             <span className="block text-sm font-semibold">FDE-Toolkit</span>
             <span className="hidden font-mono text-[9px] uppercase tracking-[0.16em] text-slate-500 sm:block">
-              insights
+              customer-to-production
             </span>
           </div>
         </Link>
-        <div className="flex items-center gap-4">
-          <Link href="/blog" className="hidden text-sm text-slate-400 hover:text-white sm:inline">
-            All insights
+        <div className="flex items-center gap-3 sm:gap-4">
+          <Link href="/platform" className="hidden text-sm text-slate-400 hover:text-white sm:inline">
+            Platform demo
+          </Link>
+          <Link href="/blog" className="hidden text-sm text-slate-400 hover:text-white md:inline">
+            Blog
           </Link>
           <Link
             href="/#interest"
@@ -49,7 +52,8 @@ export function PublicFooter() {
         </div>
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-400">
           <Link href="/" className="hover:text-white">Home</Link>
-          <Link href="/blog" className="hover:text-white">Insights</Link>
+          <Link href="/platform" className="hover:text-white">Platform demo</Link>
+          <Link href="/blog" className="hover:text-white">Blog</Link>
           <Link href="/#interest" className="hover:text-white">Contact</Link>
           <a
             href="https://github.com/amitvikram/FDE-Toolkit-New"

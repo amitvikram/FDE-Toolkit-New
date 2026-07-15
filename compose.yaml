@@ -8,4 +8,6 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_SITE_ONLY: "true"
+      FDE_DEMO_ENABLED: "true"
+      FDE_DEMO_KEEP_WORKSPACES: "false"
     restart: unless-stopped
