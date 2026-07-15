@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPlatformCore } from "./platform-core.mjs";
 import { createSandboxGateway } from "./sandbox-gateway.mjs";
+import { createCredentialBroker } from "./credential-broker.mjs";
 
 async function waitForJob(core, tenantId, jobId, acceptedStatuses, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
@@ -156,5 +157,27 @@ test("sandbox gateway provisions local workspaces and produces constrained Kuber
     assert.equal(kubernetes.manifest.spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation, false);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("credential broker issues metadata-only short-lived leases and revokes values", async () => {
+  process.env.FDE_TEST_SECRET = "not-persisted-value";
+  try {
+    const broker = createCredentialBroker();
+    const lease = await broker.issueLease({
+      tenantId: "acme",
+      jobId: "fdejob-secret-test",
+      references: { CODEX_API_KEY: "env://FDE_TEST_SECRET" },
+      ttlSeconds: 60,
+    });
+    assert.equal(lease.env.CODEX_API_KEY, "not-persisted-value");
+    const metadata = broker.metadata(lease);
+    assert.deepEqual(metadata.environmentKeys, ["CODEX_API_KEY"]);
+    assert.equal(JSON.stringify(metadata).includes("not-persisted-value"), false);
+    const revoked = broker.revoke(lease.leaseId);
+    assert.ok(revoked.revokedAt);
+    assert.equal(lease.env.CODEX_API_KEY, "");
+  } finally {
+    delete process.env.FDE_TEST_SECRET;
   }
 });
