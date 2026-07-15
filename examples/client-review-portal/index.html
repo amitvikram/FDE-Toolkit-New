@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Northstar Client Review Portal</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Northstar Financial Services</p>
+      <h1>Exception Review Portal</h1>
+    </div>
+    <span class="status">Human review required</span>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Case EX-10482</p>
+        <h2>Review a high-value payment exception</h2>
+        <p class="summary">Operations needs one place to inspect policy evidence, confidence, recommended action, and reviewer disposition.</p>
+      </div>
+      <button id="reviewButton">Open review</button>
+    </section>
+    <section class="grid">
+      <article><span>Exception reason</span><strong>Beneficiary details changed after approval</strong></article>
+      <article><span>Linked evidence</span><strong>3 policy and transaction sources</strong></article>
+      <article><span>Model confidence</span><strong>92%</strong></article>
+      <article><span>Recommended action</span><strong>Hold and request secondary approval</strong></article>
+    </section>
+    <section id="reviewPanel" class="panel" hidden>
+      <h3>Reviewer decision</h3>
+      <p>Confirm the evidence and record a disposition before the workflow can continue.</p>
+      <div class="actions"><button class="secondary">Request changes</button><button>Approve hold</button></div>
+    </section>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
