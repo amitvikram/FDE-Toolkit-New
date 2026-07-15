@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fde-toolkit.com/contracts/agent-driver.schema.json",
+  "title": "FDE-Toolkit Agent Driver Interface",
+  "description": "Vendor-neutral contract between the FDE execution plane and a coding-agent driver.",
+  "type": "object",
+  "$defs": {
+    "capability": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "streaming-events",
+        "file-diffs",
+        "command-events",
+        "test-events",
+        "clarifying-questions",
+        "session-resume",
+        "cost-reporting",
+        "structured-output",
+        "mcp",
+        "customer-hosted"
+      ]
+    },
+    "manifest": {
+      "type": "object",
+      "required": ["id", "version", "name", "vendor", "protocol", "capabilities"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+        "version": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "vendor": { "type": "string", "minLength": 1 },
+        "protocol": { "type": "string", "enum": ["process-jsonl", "json-rpc", "grpc", "signed-webhook"] },
+        "capabilities": { "type": "array", "items": { "$ref": "#/$defs/capability" }, "uniqueItems": true },
+        "deploymentModes": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["toolkit-cloud", "client-vpc", "air-gapped", "local"] },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "job": {
+      "type": "object",
+      "required": ["contractVersion", "jobId", "tenantId", "intent", "workspace", "policy", "limits"],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "jobId": { "type": "string", "minLength": 8 },
+        "tenantId": { "type": "string", "minLength": 1 },
+        "organizationId": { "type": "string" },
+        "engagementId": { "type": "string" },
+        "intent": { "type": "string", "minLength": 20, "maxLength": 20000 },
+        "context": {
+          "type": "object",
+          "properties": {
+            "repository": { "type": "string" },
+            "baseBranch": { "type": "string" },
+            "knowledgeRefs": { "type": "array", "items": { "type": "string" }, "maxItems": 100 },
+            "acceptanceCriteria": { "type": "array", "items": { "type": "string" }, "maxItems": 100 }
+          },
+          "additionalProperties": true
+        },
+        "workspace": {
+          "type": "object",
+          "required": ["mountPath", "writeScope"],
+          "properties": {
+            "mountPath": { "type": "string", "minLength": 1 },
+            "writeScope": { "type": "string", "enum": ["read-only", "workspace-write"] },
+            "sandboxId": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "tools": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "policy": {
+          "type": "object",
+          "required": ["humanApprovalRequired", "networkAccess", "secretAccess"],
+          "properties": {
+            "humanApprovalRequired": { "type": "boolean" },
+            "networkAccess": { "type": "string", "enum": ["disabled", "allowlist", "unrestricted"] },
+            "secretAccess": { "type": "string", "enum": ["none", "brokered-short-lived"] },
+            "allowedCommands": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": true
+        },
+        "limits": {
+          "type": "object",
+          "required": ["timeoutMs", "maxEvents", "maxOutputBytes", "maxCostUsd"],
+          "properties": {
+            "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 7200000 },
+            "maxEvents": { "type": "integer", "minimum": 1, "maximum": 100000 },
+            "maxOutputBytes": { "type": "integer", "minimum": 1024, "maximum": 1073741824 },
+            "maxCostUsd": { "type": "number", "minimum": 0, "maximum": 100000 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "required": ["contractVersion", "jobId", "sequence", "type", "observedAt", "payload"],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "jobId": { "type": "string", "minLength": 8 },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "type": {
+          "type": "string",
+          "enum": ["plan", "file_diff", "command_run", "test_result", "question", "usage", "done", "error"]
+        },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "payload": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/manifest" },
+    { "$ref": "#/$defs/job" },
+    { "$ref": "#/$defs/event" }
+  ]
+}
