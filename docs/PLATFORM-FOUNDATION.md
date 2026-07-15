@@ -11,7 +11,7 @@ This implementation follows one boundary: **FDE-Toolkit owns workflow, policy, p
 Published contract:
 
 - `contracts/agent-driver.schema.json`
-- Job input: tenant, organization, engagement, intent, workspace mount, scoped tools, policy, and limits.
+- Job input: tenant, organization, engagement, intent, workspace mount, scoped tools, policy, limits, and secret references.
 - Typed output events: `plan`, `file_diff`, `command_run`, `test_result`, `question`, `usage`, `done`, and `error`.
 - Capability and deployment-mode declarations.
 
@@ -20,8 +20,8 @@ Implemented execution drivers:
 | Driver | Execution surface | Runtime requirement |
 |---|---|---|
 | `fde-demo-agent` | In-process deterministic driver | Built in |
-| `openai-codex` | `codex exec --ephemeral --sandbox workspace-write --json` | Codex CLI and `CODEX_API_KEY` in the execution plane |
-| `claude-agent` | `claude --bare -p ... --output-format stream-json` | Claude CLI and `ANTHROPIC_API_KEY` in the execution plane |
+| `openai-codex` | `codex exec --ephemeral --sandbox workspace-write --json` | Codex CLI and an approved API credential inside the execution plane |
+| `claude-agent` | `claude --bare -p ... --output-format stream-json` | Claude CLI and an approved API credential inside the execution plane |
 | `cursor-agent` | Configurable process/JSONL contract | `FDE_CURSOR_COMMAND` and optional `FDE_CURSOR_ARGS_JSON` |
 | `customer-agent-gateway` | Signed event webhook | Customer runner implementing the published event contract |
 
@@ -153,6 +153,25 @@ The current policy engine enforces actions for job creation, cancellation, evide
 
 This is an authorization foundation, not complete enterprise identity. Production work still needs OIDC/SAML login, SCIM provisioning, organization membership management, service identities, and policy administration UI.
 
+### Secret-management integration
+
+Published contract:
+
+- `contracts/secret-driver.schema.json`
+
+Implemented reference schemes:
+
+| Scheme | Resolution boundary |
+|---|---|
+| `env://NAME` | Execution-plane environment; useful for local development and platform-managed deployments |
+| `vault://path#field` | HashiCorp Vault HTTP API inside the execution boundary |
+| `aws-sm://secret-id#field` | AWS Secrets Manager through an execution-plane AWS CLI/workload identity |
+| `azure-kv://vault-name/secret-name` | Azure Key Vault through an execution-plane Azure CLI/workload identity |
+
+A job carries references rather than values. When `policy.secretAccess` is `brokered-short-lived`, the execution plane resolves references into a per-job in-memory lease, passes only the resolved environment keys to the selected child process, records metadata-only lease events, then blanks and revokes the lease when execution ends.
+
+Raw secret values are not written to job records, audit records, callbacks, analytics, or the SaaS control plane. Production deployments should replace static Vault tokens and CLI sessions with workload identity and provider-native short-lived credentials.
+
 ### GitHub App promotion
 
 ```text
@@ -166,7 +185,7 @@ The GitHub App driver:
 3. Verifies the audit chain.
 4. Creates a short-lived installation token scoped to the selected repository.
 5. Creates a branch from the configured base branch.
-6. Writes `.fde/runs/{jobId}.json` containing the governed evidence package.
+6. Writes `.fde/runs/{jobId}.json` containing the governed evidence package and audit-head hash.
 7. Opens a draft pull request.
 8. Stores the PR, commit, and branch identifiers on the job.
 
@@ -215,20 +234,7 @@ x-fde-signature: sha256=<HMAC(timestamp + "." + raw body)>
 
 The signed body or headers carry actor, role, tenant, organization, and engagement context. The public web application does not receive customer agent credentials, GitHub App private keys, or client secrets.
 
-## Secret-management status
-
-Current agent runtimes read provider API keys only from the execution-plane process environment and pass a driver-specific allowlist to the child process. Keys are not written to job or audit records.
-
-The next production increment is a credential-broker driver with:
-
-- HashiCorp Vault.
-- AWS Secrets Manager.
-- Azure Key Vault.
-- Short-lived workload identity.
-- Per-job secret leases.
-- Revocation and audit events.
-
-Raw secret values must never cross into the SaaS control plane or appear in provenance payloads.
+The execution-plane HTTP service is intended to be private-network reachable. The current public-read endpoints are operational APIs, not a substitute for enterprise identity. Production topology must add service identity, TLS/mTLS, tenant-scoped authorization, and network policy.
 
 ## Deployment topologies
 
@@ -250,6 +256,7 @@ The same execution and driver contracts run entirely in the customer environment
 GET  /health
 GET  /v1/drivers
 GET  /v1/sandboxes/drivers
+GET  /v1/secrets/providers
 POST /v1/sandboxes
 GET  /v1/sandboxes/{id}
 POST /v1/sandboxes/{id}/destroy
@@ -273,16 +280,17 @@ GET  /v1/analytics/ask-to-pr
 The following are deliberately not represented as finished:
 
 1. OIDC/SAML, SCIM, MFA, service identities, and organization administration.
-2. A policy-as-code engine and policy-management UI.
-3. Vault, AWS Secrets Manager, and Azure Key Vault credential brokers.
+2. A full policy-as-code engine and policy-management UI.
+3. Workload-identity-based production credential providers, lease renewal, and provider revocation verification.
 4. A production Postgres/object-store implementation of the persistence contract.
 5. Distributed queue leasing, retries, dead-letter queues, and callback retry schedules.
 6. A separately deployed Docker gateway and a Helm-packaged Kubernetes execution operator.
-7. GitHub webhook ingestion for check runs, branch protection, review state, and merge events.
+7. GitHub webhook ingestion for check runs, branch protection, review state, and authoritative merge events.
 8. GitLab, Bitbucket, and Azure DevOps promotion drivers.
 9. A complete client approval portal with expiring links, comments, identity proof, and white-label controls.
 10. Artifact sanitization, lineage, versioning, search, and cross-engagement promotion policy.
 11. Billing-grade usage accounting and marketplace metering.
 12. Adapter conformance CLI, fixtures, certification badges, and public registry.
+13. Full control-plane UI for durable jobs, approval queues, policies, artifacts, and analytics.
 
 The critical architectural point is preserved: these additions attach to stable driver, job, event, evidence, approval, and promotion contracts rather than changing the workflow for each vendor.
