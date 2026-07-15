@@ -6,6 +6,7 @@ import {
   provisionProductSandbox,
   publicProductWorkspace,
 } from "@/lib/orchestration/platform-client";
+import { publicProductSandbox } from "@/lib/public-product-sandbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ wor
   const { workspaceId } = await context.params;
   if (!valid(workspaceId)) return NextResponse.json({ error: "Invalid workspace ID." }, { status: 400 });
   try {
-    return NextResponse.json(await listProductSandboxes(access.leadId, workspaceId));
+    const result = await listProductSandboxes(access.leadId, workspaceId);
+    return NextResponse.json({ sandboxes: result.sandboxes.map(publicProductSandbox) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Sandboxes could not be loaded." }, { status: 502 });
   }
@@ -54,7 +56,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
   if (!parsed.success) return NextResponse.json({ error: "Sandbox settings are invalid." }, { status: 400 });
   try {
     const result = await provisionProductSandbox(access.leadId, workspaceId, parsed.data);
-    return NextResponse.json({ ...result, workspace: publicProductWorkspace(result.workspace) }, { status: 201 });
+    return NextResponse.json({
+      workspace: publicProductWorkspace(result.workspace),
+      sandbox: publicProductSandbox(result.sandbox),
+    }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Sandbox could not be provisioned." }, { status: 502 });
   }
