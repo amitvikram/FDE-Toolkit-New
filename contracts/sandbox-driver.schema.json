@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fde-toolkit.com/contracts/sandbox-driver.schema.json",
+  "title": "FDE-Toolkit Sandbox Driver Interface",
+  "description": "Vendor-neutral lifecycle contract for local Docker, managed microVMs, customer Kubernetes, and air-gapped execution.",
+  "type": "object",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["contractVersion", "operation", "tenantId", "jobId", "sandbox"],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "operation": { "type": "string", "enum": ["provision", "seed", "expose_url", "snapshot", "destroy", "status"] },
+        "tenantId": { "type": "string", "minLength": 1 },
+        "jobId": { "type": "string", "minLength": 8 },
+        "sandbox": {
+          "type": "object",
+          "required": ["image", "cpu", "memoryMb", "timeoutSeconds", "networkPolicy"],
+          "properties": {
+            "id": { "type": "string" },
+            "image": { "type": "string", "minLength": 1 },
+            "cpu": { "type": "number", "exclusiveMinimum": 0, "maximum": 128 },
+            "memoryMb": { "type": "integer", "minimum": 128, "maximum": 1048576 },
+            "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+            "networkPolicy": { "type": "string", "enum": ["disabled", "allowlist", "unrestricted"] },
+            "workspaceSizeMb": { "type": "integer", "minimum": 1 },
+            "serviceAccount": { "type": "string" },
+            "nodeSelector": { "type": "object", "additionalProperties": { "type": "string" } },
+            "tolerations": { "type": "array", "items": { "type": "object" } }
+          },
+          "additionalProperties": true
+        },
+        "seed": {
+          "type": "object",
+          "properties": {
+            "repository": { "type": "string" },
+            "baseBranch": { "type": "string" },
+            "artifactRefs": { "type": "array", "items": { "type": "string" } },
+            "dataProfile": { "type": "string", "enum": ["none", "synthetic", "masked-client-data"] }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "required": ["contractVersion", "operation", "status", "sandboxId"],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "operation": { "type": "string" },
+        "status": { "type": "string", "enum": ["accepted", "provisioning", "ready", "completed", "failed", "destroyed"] },
+        "sandboxId": { "type": "string" },
+        "workspaceMount": { "type": "string" },
+        "exposedUrl": { "type": "string", "format": "uri" },
+        "snapshotRef": { "type": "string" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "providerMetadata": { "type": "object" },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [{ "$ref": "#/$defs/request" }, { "$ref": "#/$defs/response" }]
+}

@@ -1,11 +1,20 @@
 import { createServer } from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { runDemoExecution } from "./demo-runner.mjs";
+import { createPlatformCore } from "./platform-core.mjs";
+import { CONTRACT_VERSION, PLATFORM_VERSION } from "./platform-runtime.mjs";
+import { createGitHubPromotion, githubAppConfigured } from "./github-app.mjs";
+import { createSandboxGateway } from "./sandbox-gateway.mjs";
+import { createCredentialBroker } from "./credential-broker.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const signingSecret = process.env.FDE_EXECUTION_SIGNING_SECRET || "local-demo-signing-secret";
 const maxClockSkewMs = 5 * 60 * 1000;
-const maxBodyBytes = 256_000;
+const maxBodyBytes = 1024 * 1024;
+const credentialBroker = createCredentialBroker();
+const core = createPlatformCore({ credentialBroker });
+const sandboxes = createSandboxGateway({ metadataRoot: `${core.dataDir}/sandboxes` });
+await Promise.all([core.init(), sandboxes.init()]);
 
 function sendJson(response, status, payload) {
   const body = JSON.stringify(payload);
@@ -18,9 +27,7 @@ function sendJson(response, status, payload) {
 }
 
 function expectedSignature(timestamp, body) {
-  const digest = createHmac("sha256", signingSecret)
-    .update(`${timestamp}.${body}`)
-    .digest("hex");
+  const digest = createHmac("sha256", signingSecret).update(`${timestamp}.${body}`).digest("hex");
   return `sha256=${digest}`;
 }
 
@@ -33,19 +40,12 @@ function signaturesMatch(actual, expected) {
 function verifyRequest(request, body) {
   const timestamp = request.headers["x-fde-timestamp"];
   const signature = request.headers["x-fde-signature"];
-  if (typeof timestamp !== "string" || typeof signature !== "string") {
-    return "Missing signed execution metadata.";
-  }
-
+  if (typeof timestamp !== "string" || typeof signature !== "string") return "Missing signed execution metadata.";
   const parsedTimestamp = Number(timestamp);
   if (!Number.isFinite(parsedTimestamp) || Math.abs(Date.now() - parsedTimestamp) > maxClockSkewMs) {
     return "Execution request timestamp is outside the allowed window.";
   }
-
-  if (!signaturesMatch(signature, expectedSignature(timestamp, body))) {
-    return "Invalid execution request signature.";
-  }
-
+  if (!signaturesMatch(signature, expectedSignature(timestamp, body))) return "Invalid execution request signature.";
   return null;
 }
 
@@ -60,39 +60,188 @@ async function readBody(request) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function actorFrom(request, payload = {}) {
+  return payload.actor || {
+    id: String(request.headers["x-fde-actor-id"] || "control-plane"),
+    role: String(request.headers["x-fde-actor-role"] || "system"),
+  };
+}
+
+function tenantFrom(url, payload = {}) {
+  return payload.tenantId || url.searchParams.get("tenantId") || "public-demo";
+}
+
+function matchJobPath(pathname, suffix = "") {
+  const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = pathname.match(new RegExp(`^/v1/jobs/([^/]+)${escaped}$`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function requireSignedJson(request, response) {
+  const rawBody = await readBody(request);
+  const verificationError = verifyRequest(request, rawBody);
+  if (verificationError) {
+    sendJson(response, 401, { error: verificationError });
+    return null;
+  }
+  try {
+    return { rawBody, payload: rawBody ? JSON.parse(rawBody) : {} };
+  } catch {
+    sendJson(response, 400, { error: "Request body must be valid JSON." });
+    return null;
+  }
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
 
-  if (request.method === "GET" && url.pathname === "/health") {
-    return sendJson(response, 200, {
-      status: "ok",
-      service: "fde-execution-plane",
-      contractVersion: "2026-07-15",
-      executionBoundary: process.env.FDE_EXECUTION_BOUNDARY || "separate-container",
-      trustModel: "observed-not-self-reported",
-    });
-  }
-
-  if (request.method !== "POST" || url.pathname !== "/v1/runs") {
-    return sendJson(response, 404, { error: "Not found." });
-  }
-
   try {
-    const rawBody = await readBody(request);
-    const verificationError = verifyRequest(request, rawBody);
-    if (verificationError) return sendJson(response, 401, { error: verificationError });
+    if (request.method === "GET" && url.pathname === "/health") {
+      return sendJson(response, 200, {
+        status: "ok",
+        service: "fde-execution-plane",
+        contractVersion: CONTRACT_VERSION,
+        platformVersion: PLATFORM_VERSION,
+        executionBoundary: process.env.FDE_EXECUTION_BOUNDARY || "separate-container",
+        trustModel: "observed-not-self-reported",
+        storage: { type: "file", dataDir: core.dataDir, durableVolumeRecommended: true },
+        queue: core.queueStats(),
+        githubAppConfigured: githubAppConfigured(),
+        sandboxDrivers: sandboxes.catalog(),
+        secretProviders: credentialBroker.catalog(),
+      });
+    }
 
-    const payload = JSON.parse(rawBody);
-    const result = await runDemoExecution(payload);
-    return sendJson(response, 200, {
-      contractVersion: "2026-07-15",
-      result,
-    });
+    if (request.method === "GET" && url.pathname === "/v1/drivers") {
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, drivers: core.getDriverCatalog() });
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/sandboxes/drivers") {
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, drivers: sandboxes.catalog() });
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/secrets/providers") {
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, providers: credentialBroker.catalog() });
+    }
+
+    const sandboxMatch = url.pathname.match(/^\/v1\/sandboxes\/([^/]+)$/);
+    if (request.method === "GET" && sandboxMatch) {
+      const sandbox = await sandboxes.get(decodeURIComponent(sandboxMatch[1]));
+      return sandbox ? sendJson(response, 200, { sandbox }) : sendJson(response, 404, { error: "Sandbox not found." });
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/artifacts") {
+      const tenantId = tenantFrom(url);
+      return sendJson(response, 200, { tenantId, artifacts: await core.listArtifacts(tenantId) });
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/analytics/ask-to-pr") {
+      const tenantId = tenantFrom(url);
+      const actor = { id: String(request.headers["x-fde-actor-id"] || "auditor"), role: String(request.headers["x-fde-actor-role"] || "auditor") };
+      return sendJson(response, 200, await core.analytics(tenantId, actor));
+    }
+
+    const auditJobId = matchJobPath(url.pathname, "/audit");
+    if (request.method === "GET" && auditJobId) {
+      const tenantId = tenantFrom(url);
+      const audit = await core.getAudit(tenantId, auditJobId);
+      return sendJson(response, 200, { tenantId, jobId: auditJobId, ...audit });
+    }
+
+    const jobId = matchJobPath(url.pathname);
+    if (request.method === "GET" && jobId) {
+      const tenantId = tenantFrom(url);
+      const job = await core.getJob(tenantId, jobId);
+      return job ? sendJson(response, 200, { job }) : sendJson(response, 404, { error: "Job not found." });
+    }
+
+    if (request.method !== "POST") return sendJson(response, 404, { error: "Not found." });
+    const signed = await requireSignedJson(request, response);
+    if (!signed) return;
+    const { payload } = signed;
+    const actor = actorFrom(request, payload);
+
+    if (url.pathname === "/v1/runs") {
+      const result = await runDemoExecution(payload);
+      return sendJson(response, 200, { contractVersion: CONTRACT_VERSION, result });
+    }
+
+    if (url.pathname === "/v1/jobs") {
+      const job = await core.createJob({ ...payload, actor });
+      return sendJson(response, 202, { contractVersion: CONTRACT_VERSION, job });
+    }
+
+    if (url.pathname === "/v1/customer-agents/events") {
+      const job = await core.ingestCustomerEvent(payload);
+      return sendJson(response, 202, { contractVersion: CONTRACT_VERSION, job });
+    }
+
+    if (url.pathname === "/v1/artifacts") {
+      const artifact = await core.createArtifact(payload, actor);
+      return sendJson(response, 201, { contractVersion: CONTRACT_VERSION, artifact });
+    }
+
+    if (url.pathname === "/v1/sandboxes") {
+      core.authorize(actor, "job:create");
+      const sandbox = await sandboxes.provision(payload);
+      return sendJson(response, 201, { contractVersion: CONTRACT_VERSION, sandbox });
+    }
+
+    const destroySandbox = url.pathname.match(/^\/v1\/sandboxes\/([^/]+)\/destroy$/);
+    if (destroySandbox) {
+      core.authorize(actor, "job:cancel");
+      const sandbox = await sandboxes.destroy(decodeURIComponent(destroySandbox[1]));
+      return sendJson(response, 200, { sandbox });
+    }
+
+    const cancelId = matchJobPath(url.pathname, "/cancel");
+    if (cancelId) {
+      const tenantId = tenantFrom(url, payload);
+      const job = await core.cancelJob(tenantId, cancelId, actor);
+      return sendJson(response, 200, { job });
+    }
+
+    const evidenceId = matchJobPath(url.pathname, "/evidence");
+    if (evidenceId) {
+      const tenantId = tenantFrom(url, payload);
+      return sendJson(response, 201, await core.addEvidence(tenantId, evidenceId, payload, actor));
+    }
+
+    const approvalId = matchJobPath(url.pathname, "/approvals");
+    if (approvalId) {
+      const tenantId = tenantFrom(url, payload);
+      const job = await core.recordApproval(tenantId, approvalId, { ...payload, actor });
+      return sendJson(response, 201, { job });
+    }
+
+    const promoteId = matchJobPath(url.pathname, "/promote/github");
+    if (promoteId) {
+      const tenantId = tenantFrom(url, payload);
+      core.authorize(actor, "promotion:create");
+      const rawJob = await core.getRawJob(promoteId, tenantId);
+      if (!rawJob) return sendJson(response, 404, { error: "Job not found." });
+      await core.getAudit(tenantId, promoteId).then((audit) => {
+        if (!audit.verified) throw new Error("Audit chain verification failed; promotion is blocked.");
+        rawJob.auditHeadHash = audit.headHash;
+      });
+      const promotion = await createGitHubPromotion(rawJob, payload);
+      const job = await core.markPromoted(tenantId, promoteId, promotion, actor);
+      return sendJson(response, 201, { job, promotion });
+    }
+
+    const mergedId = matchJobPath(url.pathname, "/merged");
+    if (mergedId) {
+      const tenantId = tenantFrom(url, payload);
+      const job = await core.markMerged(tenantId, mergedId, payload);
+      return sendJson(response, 200, { job });
+    }
+
+    return sendJson(response, 404, { error: "Not found." });
   } catch (error) {
-    console.error("Execution plane run failed:", error);
-    return sendJson(response, 500, {
-      error: error instanceof Error ? error.message : "Execution plane run failed.",
-    });
+    console.error("Execution plane request failed:", error);
+    const message = error instanceof Error ? error.message : "Execution plane request failed.";
+    const status = /not found/i.test(message) ? 404 : /cannot perform|approval|signature|policy/i.test(message) ? 403 : 400;
+    return sendJson(response, status, { error: message });
   }
 });
 
