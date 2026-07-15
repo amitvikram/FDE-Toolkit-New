@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
 import { PublicPage } from "@/components/marketing/PublicChrome";
-import { PlatformDemo } from "@/components/platform/PlatformDemo";
+import { ExecutiveDemo } from "@/components/platform/ExecutiveDemo";
 import { ControlPlanePrinciples } from "@/components/platform/ControlPlanePrinciples";
 import { ExecutionPlaneStatus } from "@/components/platform/ExecutionPlaneStatus";
 
 export const metadata: Metadata = {
-  title: "Integration Orchestrator",
+  title: "Executive Demo",
   description:
-    "See how FDE-Toolkit connects customer-approved coding agents, sandbox environments, source control, evidence, approvals, and production promotion.",
+    "Watch a realistic enterprise, SaaS, or systems-integrator client request become a governed product proof, evidence package, approval decision, and reviewable PR package.",
   openGraph: {
-    title: "FDE-Toolkit Integration Orchestrator",
+    title: "FDE-Toolkit Executive Demo",
     description:
-      "One governed delivery layer across coding agents, sandbox platforms, source control, approvals, and reusable delivery knowledge.",
+      "From a real client ask to a governed engineering decision—with business outcomes, human approvals, working product proof, and observed provenance.",
     url: "/platform",
   },
 };
@@ -20,7 +20,7 @@ export default function PlatformPage() {
   return (
     <PublicPage>
       <ExecutionPlaneStatus />
-      <PlatformDemo />
+      <ExecutiveDemo />
       <ControlPlanePrinciples />
     </PublicPage>
   );
