@@ -1,0 +1,22 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #0f172a; background: #f8fafc; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; }
+.topbar { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:24px 6vw; border-bottom:1px solid #e2e8f0; background:white; }
+.topbar h1 { margin:4px 0 0; font-size:22px; }
+.eyebrow { margin:0; color:#0891b2; font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+.status { border:1px solid #fbbf24; background:#fffbeb; color:#92400e; border-radius:999px; padding:8px 12px; font-size:12px; font-weight:700; }
+.shell { max-width:1080px; margin:0 auto; padding:48px 24px; }
+.hero { display:grid; grid-template-columns:1fr auto; align-items:end; gap:32px; padding:32px; border-radius:24px; color:white; background:linear-gradient(135deg,#0f172a,#164e63); }
+.hero h2 { margin:10px 0; font-size:34px; max-width:680px; }
+.summary { margin:0; max-width:700px; color:#cbd5e1; line-height:1.7; }
+button { border:0; border-radius:12px; background:#22d3ee; color:#083344; padding:12px 18px; font-weight:800; cursor:pointer; }
+button:hover { filter:brightness(.96); }
+.grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:24px; }
+.grid article { min-height:130px; border:1px solid #e2e8f0; border-radius:18px; background:white; padding:22px; box-shadow:0 10px 30px rgba(15,23,42,.04); }
+.grid span { display:block; color:#64748b; font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+.grid strong { display:block; margin-top:14px; font-size:18px; line-height:1.45; }
+.panel { margin-top:24px; border:1px solid #bae6fd; border-radius:18px; background:#ecfeff; padding:24px; }
+.panel h3 { margin-top:0; }
+.actions { display:flex; justify-content:flex-end; gap:10px; }
+.secondary { border:1px solid #cbd5e1; background:white; color:#334155; }
+@media (max-width:720px) { .hero { grid-template-columns:1fr; align-items:start; } .grid { grid-template-columns:1fr; } .topbar { align-items:flex-start; flex-direction:column; } }
