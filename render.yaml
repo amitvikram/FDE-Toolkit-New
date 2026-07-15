@@ -19,6 +19,8 @@ services:
         value: http://127.0.0.1:8787
       - key: FDE_EXECUTION_SIGNING_SECRET
         value: render-public-demo-local-secret
+      - key: FDE_PRODUCT_ACCESS_SECRET
+        sync: false
       - key: FDE_DEMO_KEEP_WORKSPACES
         value: "false"
       - key: RESEND_API_KEY

@@ -47,6 +47,8 @@ services:
       FDE_EMBEDDED_EXECUTION_PLANE: "false"
       FDE_EXECUTION_PLANE_URL: http://execution-plane:8787
       FDE_EXECUTION_SIGNING_SECRET: local-demo-signing-secret
+      FDE_PRODUCT_ACCESS_SECRET: local-product-access-secret
+      FDE_PRODUCT_ACCESS_ALLOW_UNDELIVERED: "true"
     restart: unless-stopped
 
 volumes:
