@@ -6,7 +6,8 @@ ENV PORT=8787
 ENV FDE_EXECUTION_BOUNDARY=separate-container
 ENV FDE_DATA_DIR=/var/lib/fde
 
-RUN apk add --no-cache git
+RUN apk add --no-cache bash git \
+    && npm install --global @openai/codex
 
 COPY execution-plane/package.json ./package.json
 COPY execution-plane/server.mjs ./server.mjs
