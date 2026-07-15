@@ -6,8 +6,9 @@ function object(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-export function publicProductJob<T extends Record<string, unknown>>(job: T): T {
-  const result = object(job.result);
+export function publicProductJob<T extends object>(job: T): T {
+  const record = job as Record<string, unknown>;
+  const result = object(record.result);
   if (!result) return job;
 
   const workspace = object(result.workspace);
@@ -20,7 +21,7 @@ export function publicProductJob<T extends Record<string, unknown>>(job: T): T {
   } = workspace;
 
   return {
-    ...job,
+    ...record,
     result: {
       ...result,
       workspace: publicWorkspace,
