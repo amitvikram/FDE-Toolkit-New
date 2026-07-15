@@ -14,6 +14,7 @@ COPY execution-plane/persistence.mjs ./persistence.mjs
 COPY execution-plane/platform-core.mjs ./platform-core.mjs
 COPY execution-plane/github-app.mjs ./github-app.mjs
 COPY execution-plane/sandbox-gateway.mjs ./sandbox-gateway.mjs
+COPY execution-plane/credential-broker.mjs ./credential-broker.mjs
 
 RUN mkdir -p /var/lib/fde /workspaces && chown -R node:node /var/lib/fde /workspaces /app
 
