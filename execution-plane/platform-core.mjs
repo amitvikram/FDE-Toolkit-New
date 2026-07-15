@@ -50,6 +50,7 @@ function requestApprovalKeys(job, result) {
 export function createPlatformCore(options = {}) {
   const dataDir = resolve(options.dataDir || process.env.FDE_DATA_DIR || "/tmp/fde-execution-data");
   const store = new FilePlatformStore(dataDir);
+  const credentialBroker = options.credentialBroker || null;
   const callbackSecret = options.callbackSecret || process.env.FDE_CALLBACK_SIGNING_SECRET || process.env.FDE_EXECUTION_SIGNING_SECRET || "local-demo-signing-secret";
   const maxConcurrent = clampInteger(options.maxConcurrent || process.env.FDE_MAX_CONCURRENT_JOBS, 2, 1, 64);
   const perTenantConcurrent = clampInteger(options.perTenantConcurrent || process.env.FDE_MAX_CONCURRENT_JOBS_PER_TENANT, 1, 1, 32);
@@ -216,7 +217,28 @@ export function createPlatformCore(options = {}) {
         for (const command of result.provenance?.commands || []) await emitObservedEvent(job, { type: "command_run", payload: command, source: "fde-execution-plane" });
         for (const test of result.provenance?.tests || []) await emitObservedEvent(job, { type: "test_result", payload: test, source: "fde-execution-plane" });
       } else {
-        result = await runCommandDriver(job.request, (event) => emitObservedEvent(job, event));
+        let lease = null;
+        try {
+          if (Object.keys(job.request.secretRefs || {}).length) {
+            if (job.request.policy.secretAccess !== "brokered-short-lived") {
+              throw new Error("Secret references require policy.secretAccess=brokered-short-lived.");
+            }
+            if (!credentialBroker) throw new Error("A credential broker is not configured in this execution plane.");
+            lease = await credentialBroker.issueLease({
+              tenantId: job.tenantId,
+              jobId: job.id,
+              references: job.request.secretRefs,
+              ttlSeconds: Math.ceil(job.request.limits.timeoutMs / 1000),
+            });
+            await store.appendAudit(tenantId, jobId, "secret.lease.issued", credentialBroker.metadata(lease), "fde-execution-plane");
+          }
+          result = await runCommandDriver(job.request, (event) => emitObservedEvent(job, event), lease?.env || {});
+        } finally {
+          if (lease) {
+            const revoked = credentialBroker.revoke(lease.leaseId);
+            await store.appendAudit(tenantId, jobId, "secret.lease.revoked", revoked, "fde-execution-plane");
+          }
+        }
       }
 
       job = await store.mutateJob(tenantId, jobId, (current) => {
