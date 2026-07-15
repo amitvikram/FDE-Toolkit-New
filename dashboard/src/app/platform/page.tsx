@@ -20,8 +20,8 @@ export default function PlatformPage() {
   return (
     <PublicPage>
       <ExecutionPlaneStatus />
-      <ControlPlanePrinciples />
       <PlatformDemo />
+      <ControlPlanePrinciples />
     </PublicPage>
   );
 }
