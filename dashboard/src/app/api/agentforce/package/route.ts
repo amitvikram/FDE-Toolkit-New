@@ -69,7 +69,12 @@ export async function GET(request: NextRequest) {
       { status: 401 },
     );
   }
-  return NextResponse.json({ blueprints: getAgentforceBlueprints() });
+
+  const blueprints = getAgentforceBlueprints().map((blueprint: { id: string }) => ({
+    ...blueprint,
+    defaults: buildAgentforcePackage({ blueprintId: blueprint.id }).implementation,
+  }));
+  return NextResponse.json({ blueprints });
 }
 
 export async function POST(request: NextRequest) {
