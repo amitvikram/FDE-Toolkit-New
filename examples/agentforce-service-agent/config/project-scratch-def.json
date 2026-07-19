@@ -1,0 +1,15 @@
+{
+  "orgName": "Northstar Agentforce Development",
+  "edition": "Enterprise",
+  "features": [
+    "Einstein1AIPlatform"
+  ],
+  "settings": {
+    "agentPlatformSettings": {
+      "enableAgentPlatform": true
+    },
+    "einsteinGptSettings": {
+      "enableEinsteinGptPlatform": true
+    }
+  }
+}
