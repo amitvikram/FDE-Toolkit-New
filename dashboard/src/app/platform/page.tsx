@@ -19,5 +19,17 @@ export const metadata: Metadata = {
 export default async function PlatformPage() {
   const cookieStore = await cookies();
   const access = verifyProductAccessToken(cookieStore.get(PRODUCT_ACCESS_COOKIE)?.value);
-  return access ? <FDEProductWorkspaceV2 /> : <ProductAccessGate />;
+  if (!access) return <ProductAccessGate />;
+
+  return (
+    <div className="relative">
+      <a
+        href="/platform/agentforce"
+        className="fixed bottom-6 right-6 z-50 rounded-full border border-blue-200 bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-xl shadow-blue-950/20 transition hover:bg-blue-700"
+      >
+        Open Agentforce workspace
+      </a>
+      <FDEProductWorkspaceV2 />
+    </div>
+  );
 }
